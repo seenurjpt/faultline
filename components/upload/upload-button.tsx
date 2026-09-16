@@ -32,7 +32,9 @@ export function UploadButton({
       >
         {children}
       </button>
-      <UploadModal open={open} onOpenChange={setOpen} />
+      {/* No dataset is on screen in the empty state, so there is nothing for
+          the modal to wait to arrive: it navigates and unmounts with the page. */}
+      <UploadModal open={open} onOpenChange={setOpen} currentDatasetId="" />
     </>
   );
 }

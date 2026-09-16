@@ -4,23 +4,33 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "@phosphor-icons/react";
 import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
-import { Button, cx } from "../ui/primitives";
+import { Button, Skeleton, cx } from "../ui/primitives";
 import { UploadPanel } from "./upload-panel";
 import { useUpload } from "./use-upload";
 
 export function UploadModal({
   open,
   onOpenChange,
+  currentDatasetId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** The dataset the dashboard behind the modal is currently showing. */
+  currentDatasetId: string;
 }) {
   const controller = useUpload();
   const router = useRouter();
   const [confirmingClose, setConfirmingClose] = useState(false);
+  // Whether this modal started a navigation, which swaps the body for the
+  // loading state and locks the close button.
+  const [opening, setOpening] = useState(false);
+  // The dataset being navigated to, so the modal knows which arrival to
+  // close on rather than closing on any re-render.
+  const [target, setTarget] = useState<string | null>(null);
 
   const close = useCallback(() => {
     setConfirmingClose(false);
+    setOpening(false);
     controller.reset();
     onOpenChange(false);
   }, [controller, onOpenChange]);
@@ -37,7 +47,13 @@ export function UploadModal({
 
   const openDataset = useCallback(
     (datasetId: string) => {
-      close();
+      // The dashboard recomputes the whole overview against Neon for a dataset
+      // that has just landed, which takes a moment. Closing the modal first
+      // left the old dashboard on screen with no sign anything was happening,
+      // so the modal stays up showing progress and closes once the new page
+      // has actually rendered.
+      setOpening(true);
+      setTarget(datasetId);
       // A freshly uploaded dataset is not in the server-rendered dataset list
       // yet, so the page must re-fetch as well as navigate. push() carries the
       // id in the URL and refresh() re-runs the server component for it;
@@ -46,8 +62,20 @@ export function UploadModal({
       router.push(`/?dataset=${datasetId}`);
       router.refresh();
     },
-    [close, router],
+    [router],
   );
+
+  // The modal closes when the dashboard for the requested dataset is actually
+  // on screen, which `currentDatasetId` reports from the server component.
+  // Timing the close off the navigation call instead closed it immediately,
+  // leaving the previous dashboard visible while the new one was still being
+  // computed — the thing the loading state exists to avoid.
+  if (opening && target !== null && currentDatasetId === target) {
+    setOpening(false);
+    setTarget(null);
+    controller.reset();
+    onOpenChange(false);
+  }
 
   return (
     <Dialog.Root
@@ -102,8 +130,9 @@ export function UploadModal({
             <button
               type="button"
               onClick={requestClose}
+              disabled={opening}
               aria-label="Close"
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-field)] text-[var(--shale)] hover:bg-[var(--paper)] hover:text-[var(--basalt)]"
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-field)] text-[var(--shale)] hover:bg-[var(--paper)] hover:text-[var(--basalt)] disabled:opacity-40"
             >
               <X size={16} />
             </button>
@@ -112,11 +141,18 @@ export function UploadModal({
           {/* min-h-0 is what lets a flex child actually scroll rather than
               growing to fit its content and pushing the footer out. */}
           <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
-            {/* Full height so the panel's min-h-full has something to resolve
-                against and the tray fills the box instead of floating. */}
-            <div className="h-full">
-              <UploadPanel controller={controller} onOpenDataset={openDataset} />
-            </div>
+            {opening ? (
+              <OpeningDashboard />
+            ) : (
+              /* Full height so the panel's min-h-full has something to resolve
+               against and the tray fills the box instead of floating. */
+              <div className="h-full">
+                <UploadPanel
+                  controller={controller}
+                  onOpenDataset={openDataset}
+                />
+              </div>
+            )}
           </div>
 
           {/* Pinned, so a long receipt cannot scroll the warning out of view. */}
@@ -131,6 +167,47 @@ export function UploadModal({
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
+  );
+}
+
+/**
+ * Shown while the dashboard is being built for a dataset that has just been
+ * stored. The shapes match what is about to appear behind the modal — a
+ * verdict line, the ribbon lanes, a few ledger rows — so the wait reads as
+ * the page arriving rather than as a spinner over nothing (DESIGN §6.10:
+ * skeletons match final geometry, slow pulse, no shimmer).
+ */
+function OpeningDashboard() {
+  return (
+    <div className="flex h-full flex-col gap-5 py-2" aria-hidden="true">
+      <p
+        aria-hidden="false"
+        aria-live="polite"
+        className="text-[15px] leading-[22px] text-[var(--shale)]"
+      >
+        Building the dashboard for this file…
+      </p>
+
+      <div className="flex flex-col gap-2">
+        <Skeleton className="h-5 w-4/5" />
+        <Skeleton className="h-5 w-3/5" />
+      </div>
+
+      <div className="flex flex-col gap-3">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <div key={i} className="flex items-center gap-3">
+            <Skeleton className="h-3 w-24 shrink-0" />
+            <Skeleton className="h-[2px] flex-1" />
+          </div>
+        ))}
+      </div>
+
+      <div className="flex flex-col gap-2">
+        {[0, 1, 2].map((i) => (
+          <Skeleton key={i} className="h-3 w-full" />
+        ))}
+      </div>
+    </div>
   );
 }
 

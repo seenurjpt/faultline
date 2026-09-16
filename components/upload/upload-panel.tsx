@@ -7,7 +7,11 @@ import { useRef, useState } from "react";
 import { Button, InlineError, cx } from "../ui/primitives";
 import { formatBytes, formatDate, formatNumber } from "@/lib/format";
 import { REQUIRED_COLUMNS } from "@/core/src/types";
-import { CHUNK_ROWS, type PreflightOk, type UploadSummary } from "@/lib/upload-client";
+import {
+  CHUNK_ROWS,
+  type PreflightOk,
+  type UploadSummary,
+} from "@/lib/upload-client";
 import type { Stage, UploadController } from "./use-upload";
 
 export function UploadPanel({
@@ -103,11 +107,15 @@ function EmptyTray({
   inputRef: React.RefObject<HTMLInputElement | null>;
   onChoose: (file: File) => void;
 }) {
+  // Centred: the tray is an empty target filling the dialog, so its content
+  // sits in the middle of it rather than hugging one corner.
   return (
-    <div className="flex flex-1 flex-col items-start justify-center gap-4 py-8">
+    <div className="flex flex-1 flex-col items-center justify-center gap-4 py-8 text-center">
       <p className="text-[19px] leading-[26px]">Drop a .csv here</p>
       <div className="flex items-center gap-3">
-        <span className="text-[15px] leading-[22px] text-[var(--shale)]">or</span>
+        <span className="text-[15px] leading-[22px] text-[var(--shale)]">
+          or
+        </span>
         <Button onClick={() => inputRef.current?.click()}>Choose file</Button>
         <input
           ref={inputRef}
@@ -156,7 +164,11 @@ function PreflightCard({
   );
 }
 
-function BatchTrack({ stage }: { stage: Extract<Stage, { kind: "processing" }> }) {
+function BatchTrack({
+  stage,
+}: {
+  stage: Extract<Stage, { kind: "processing" }>;
+}) {
   const done = stage.batches.filter((b) => b === "done").length;
   const active = stage.batches.filter((b) => b === "active").length;
   const total = stage.batches.length;
@@ -192,8 +204,9 @@ function BatchTrack({ stage }: { stage: Extract<Stage, { kind: "processing" }> }
       </ol>
 
       <p className="text-[15px] leading-[22px] tnum">
-        So far: {formatNumber(stage.stored)} stored, {formatNumber(stage.merged)}{" "}
-        merged, {formatNumber(stage.rejected)} rejected
+        So far: {formatNumber(stage.stored)} stored,{" "}
+        {formatNumber(stage.merged)} merged, {formatNumber(stage.rejected)}{" "}
+        rejected
       </p>
 
       <p aria-live="polite" className="sr-only-table">

@@ -95,17 +95,22 @@ export function DashboardView({
   // DESIGN §6.3: clicking the ribbon filters the logs to that day and service.
   const selectFromRibbon = useCallback(
     (serviceId: string, utcDay: string) => {
+      // DESIGN §6.3 sets the day and the service, and deliberately not the
+      // outcome: clicking a healthy stretch used to force "failures" and show
+      // an empty table, and it silently discarded whatever outcome the user
+      // had already chosen. The one exception is the rejected view, which has
+      // no date or service of its own, so a click there has to leave it.
       setFilters({
         mode: "day",
         date: utcDay,
         from: null,
         to: null,
         services: [serviceId],
-        outcome: "failures",
+        ...(filters.outcome === "rejected" ? { outcome: "all" as const } : {}),
       });
       scrollToLogs();
     },
-    [setFilters, scrollToLogs],
+    [setFilters, scrollToLogs, filters.outcome],
   );
 
   const selectIncident = useCallback(
@@ -118,6 +123,9 @@ export function DashboardView({
         from: null,
         to: null,
         services: [incident.serviceId],
+        // Unlike a ribbon click, choosing a named incident is an explicit
+        // "show me this outage", so narrowing to failures is what was asked
+        // for rather than an assumption.
         outcome: "failures",
       });
       scrollToLogs();
@@ -205,7 +213,11 @@ export function DashboardView({
         onManageClick={() => setManageOpen(true)}
       />
 
-      <UploadModal open={uploadOpen} onOpenChange={setUploadOpen} />
+      <UploadModal
+        open={uploadOpen}
+        onOpenChange={setUploadOpen}
+        currentDatasetId={overview.dataset.id}
+      />
 
       <ManageDatasetsModal
         open={manageOpen}
