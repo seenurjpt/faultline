@@ -172,7 +172,8 @@ Grid: 12 columns, 24px gutters, max content width 1360px, 32px page padding (16p
 │▌14 Apr, 12:00       search-api    agent-1   500      2,193 ms   from seconds      │
 │▌14 Apr, 12:30       search-api    agent-1   503      2,356 ms   from seconds      │
 │ …                                                                                 │
-│                              Load more records                                    │
+├───────────────────────────────────────────────────────────────────────────────────┤
+│ 1–20 of 15,551   [20 per page ▾]      [<] [1] 2  3  4 … 778 [>]                   │
 └───────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -217,15 +218,15 @@ After a file is chosen, the tray becomes the pre-flight card:
   [Process file]   Choose a different file
 ```
 
-While processing, the tray shows the **batch track**, a genuinely sequential strip, so numbering is appropriate:
+While processing, the tray shows the **batch track**. Batches are numbered in file order, but up to four travel at once, so the heading counts what has landed rather than pointing at a single current batch:
 
 ```
-  Batch 3 of 8
-  [1 ■■■■][2 ■■■■][3 ▒▒▒▒][4    ][5    ][6    ][7    ][8    ]
-  So far: 5,988 stored, 4 merged, 0 rejected
+  2 of 8 batches processed, 4 in flight
+  [1 ■■■■][2 ■■■■][3 ▒▒▒▒][4 ▒▒▒▒][5 ▒▒▒▒][6 ▒▒▒▒][7    ][8    ]
+  So far: 3,996 stored, 4 merged, 0 rejected
 ```
-- Done batches fill with `--tide`; the active batch has a slow left-to-right fill tied to request time (not a fake timer); failed batches outline in `--fault` with the error below.
-- A polite `aria-live` region announces "Batch 3 of 8 processed."
+- Done batches fill with `--tide`; batches in flight pulse in `--tide` outline; a failed batch outlines in `--fault` with the error below, and the batches that were cancelled because of it return to waiting rather than being marked.
+- A polite `aria-live` region announces each landing: "Batch 3 of 8 processed." When the processor continues an earlier unfinished upload, the batches it already held show as done from the start and the region says so: "2 of 8 batches were already stored by an earlier attempt. Sending the rest."
 
 On completion, the tray becomes the **receipt**:
 
@@ -258,6 +259,7 @@ Minimum touch target 40×40px.
 
 ### 6.1 Top bar
 - Height 56px, `--paper` background, bottom 1px `--rule`.
+- **Sticks to the top of the viewport.** The dataset and period controls decide what every number on the page means, and the logs table is long enough to scroll them away; keeping them in view means the reader never has to scroll back up to check which file or month they are looking at. The bar publishes its measured height as `--top-bar-h` on `<html>`, and the table headers stick at that offset so the two never overlap — measured rather than hardcoded, because the bar wraps at narrow widths and grows when the mobile disclosure opens.
 - Wordmark "Faultline" in Familjen Grotesk 600, 19px, with a small 3-spike glyph drawn in SVG (three vertical strokes of 4/12/6px in `--fault`). No logo image.
 - Dataset select: shows filename (middle-truncated) and date range in `--shale`.
 - Period select: "Whole file", then months; months with partial data show "25 of 30 days" in `--shale` inside the option.
@@ -369,8 +371,11 @@ Columns: Service · Availability · Nines · Downtime · Error budget used · In
 
 - Row expand (chevron button at row end): raw timestamp, source line ("Line 3,812 in the file"), region, and the flag explanations.
 - Rejected view columns: Line, Reason (human text), Raw row (wrapped, `--t-sm`, `--shale`, `word-break: break-all`).
-- Footer: "Showing 100 of 1,412" and a secondary "Load more records" button.
-- Loading more: button shows "Loading…" and stays in place; no spinner overlay.
+- Footer: one page at a time — "1–20 of 15,551" and a records-per-page select (10/20/50/100, default 20) on the left; Previous, numbered page buttons and Next on the right, above a `--rule` top border. Rows accumulated across pages would put thousands of nodes in the DOM and bury the pager below them, so only the current page is rendered.
+- Page numbers: first and last always shown, a one-page window around the current page, `…` for the gaps. A gap that would hide exactly one page shows that page instead, since the ellipsis costs the same width. The control keeps a steady width so the buttons do not move under the pointer while paging.
+- Changing the page size returns to page 1, because "page 3" means a different set of rows at a different size.
+- Changing page: the buttons disable while the request is in flight and the page already on screen stays put, so the table never collapses to a skeleton mid-read. A polite `aria-live` region announces the new page.
+- An expanded row detail closes on a page change, because the row it belonged to is gone.
 
 ### 6.9 Buttons and fields
 

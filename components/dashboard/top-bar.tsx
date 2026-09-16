@@ -5,7 +5,7 @@ import * as Select from "@radix-ui/react-select";
 import * as ToggleGroup from "@radix-ui/react-toggle-group";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { CaretDown, Check } from "@phosphor-icons/react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FaultGlyph, cx } from "../ui/primitives";
 import { formatRange, middleTruncate } from "@/lib/format";
 import { useDashboardState } from "@/lib/url-state";
@@ -180,6 +180,30 @@ export function TopBar({
   // DESIGN §5.4: under 720px the dataset and period controls collapse.
   const [open, setOpen] = useState(false);
 
+  // The table headers stick below this one, so they need its height. It is
+  // measured rather than hardcoded because the bar wraps at narrow widths and
+  // grows when the mobile disclosure opens. The value is published as a CSS
+  // variable on <html>, which is the nearest common ancestor of the header
+  // and the tables.
+  const headerRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const publish = () => {
+      document.documentElement.style.setProperty(
+        "--top-bar-h",
+        `${Math.round(el.getBoundingClientRect().height)}px`,
+      );
+    };
+    publish();
+    const observer = new ResizeObserver(publish);
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      document.documentElement.style.removeProperty("--top-bar-h");
+    };
+  }, []);
+
   const datasetId = state.dataset || datasets[0]?.id || "";
 
   const controls = (
@@ -199,7 +223,12 @@ export function TopBar({
 
   return (
     <Tooltip.Provider delayDuration={200}>
-      <header className="bg-[var(--paper)] border-b border-[var(--rule)]">
+      {/* The dataset and period controls decide what every number below
+          means, so they stay reachable while reading a long logs table. */}
+      <header
+        ref={headerRef}
+        className="sticky top-0 z-30 bg-[var(--paper)] border-b border-[var(--rule)]"
+      >
         <div className="mx-auto max-w-[1360px] px-4 sm:px-8">
           <div className="flex min-h-14 flex-wrap items-center gap-x-4 gap-y-2 py-2">
             <Link

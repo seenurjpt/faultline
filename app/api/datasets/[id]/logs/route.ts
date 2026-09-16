@@ -21,7 +21,15 @@ const paramsSchema = z
       .default("all"),
     agent: z.string().max(100).optional(),
     cursor: z.string().max(500).optional(),
+    // Only for jumping to a page number; stepping uses the cursor.
+    offset: z.coerce.number().int().min(0).max(1_000_000).optional(),
     limit: z.coerce.number().int().min(1).max(200).default(100),
+  })
+  // A cursor and an offset describe two different positions, so accepting
+  // both would silently apply one and ignore the other.
+  .refine((v) => !(v.cursor && v.offset), {
+    message: "Use either cursor or offset, not both.",
+    path: ["offset"],
   })
   // SPEC §11.3: one date mode or the other, never both.
   .refine((v) => !(v.date && (v.from || v.to)), {
@@ -114,6 +122,7 @@ export async function GET(
         id,
         q.limit,
         Number.isFinite(after) ? after : null,
+        q.offset ?? 0,
       );
       return NextResponse.json(
         {
@@ -173,6 +182,7 @@ export async function GET(
       outcome: q.outcome,
       agent: q.agent ?? null,
       cursor,
+      offset: q.offset ?? 0,
       limit: q.limit,
       slowThresholds: thresholds,
     });

@@ -60,17 +60,13 @@ export function DashboardView({
     agent: filters.agent,
   });
 
-  const pages = logsQuery.data?.pages ?? [];
-  const logsTotal = pages[0]?.total ?? 0;
+  const logsTotal = logsQuery.total;
   // The endpoint returns check rows or rejected rows depending on `outcome`,
   // so which shape came back is decided by the filter, not by inspection.
-  const fetchedRows: (LogRow | RejectedRow)[] = pages.flatMap(
-    (p) => p.rows as (LogRow | RejectedRow)[],
-  );
   const logRows =
-    filters.outcome === "rejected" ? [] : (fetchedRows as LogRow[]);
+    filters.outcome === "rejected" ? [] : (logsQuery.rows as LogRow[]);
   const rejectedRows =
-    filters.outcome === "rejected" ? (fetchedRows as RejectedRow[]) : [];
+    filters.outcome === "rejected" ? (logsQuery.rows as RejectedRow[]) : [];
 
   // DESIGN §6.2: the coverage warning appears below 99%.
   const lowCoverage = quality.coveragePct < 99;
@@ -345,12 +341,24 @@ export function DashboardView({
                     ? logsQuery.error.message
                     : "Couldn't load check records."
                 }
-                onRetry={() => void logsQuery.refetch()}
+                onRetry={logsQuery.refetch}
               />
             ) : isRejectedView ? (
               <RejectedTable
                 rows={rejectedRows}
                 loading={logsQuery.isPending}
+                total={logsTotal}
+                page={logsQuery.page}
+                pageCount={logsQuery.pageCount}
+                pageSize={logsQuery.pageSize}
+                onPageSize={logsQuery.setPageSize}
+                onGoToPage={logsQuery.goToPage}
+                firstRowNumber={logsQuery.firstRowNumber}
+                hasPrev={logsQuery.hasPrev}
+                hasNext={logsQuery.hasNext}
+                onPrev={logsQuery.goPrev}
+                onNext={logsQuery.goNext}
+                paging={logsQuery.isFetching}
               />
             ) : (
               <LogsTable
@@ -359,9 +367,17 @@ export function DashboardView({
                 withYear={datasetSpansYears}
                 loading={logsQuery.isPending}
                 total={logsTotal}
-                hasMore={logsQuery.hasNextPage}
-                loadingMore={logsQuery.isFetchingNextPage}
-                onLoadMore={() => void logsQuery.fetchNextPage()}
+                page={logsQuery.page}
+                pageCount={logsQuery.pageCount}
+                pageSize={logsQuery.pageSize}
+                onPageSize={logsQuery.setPageSize}
+                onGoToPage={logsQuery.goToPage}
+                firstRowNumber={logsQuery.firstRowNumber}
+                hasPrev={logsQuery.hasPrev}
+                hasNext={logsQuery.hasNext}
+                onPrev={logsQuery.goPrev}
+                onNext={logsQuery.goNext}
+                paging={logsQuery.isFetching}
                 onClearFilters={() =>
                   setFilters({
                     date: null,

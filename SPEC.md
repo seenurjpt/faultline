@@ -93,7 +93,7 @@ faultline/
 │   │   ├── components/         # see DESIGN.md for component inventory
 │   │   ├── lib/db.ts           # neon() client, server-only
 │   │   ├── lib/queries.ts      # all SQL for reads
-│   │   └── lib/upload-client.ts# chunker + sequential sender
+│   │   └── lib/upload-client.ts# chunker + bounded-concurrency sender
 │   └── processor/              # Cloudflare Worker
 │       ├── src/index.ts        # router
 │       ├── src/handlers/*.ts
@@ -137,7 +137,7 @@ Package manager: **pnpm** workspaces. Node **22 LTS**. Use the current stable ve
    - Show the pre-flight summary (file name, size, rows, chunks) and the **Process file** button.
 3. **Create upload.** `POST {PROCESSOR}/v1/uploads` with the pre-flight metadata.
    - If a *complete* upload with the same `sha256` exists and `force` is false → `409 already_uploaded`. UI offers **Open existing dataset** or **Process again** (re-sends with `force: true`).
-4. **Send chunks sequentially.** For `i = 0..chunkCount-1`: `PUT {PROCESSOR}/v1/uploads/{id}/chunks/{i}` with body = header line + that chunk's data lines, and header `X-Line-Offset` = file line number of the chunk's first data line (header is line 1, first data line is line 2).
+4. **Send chunks, up to 4 in flight.** For every `i` the processor did not report as already received: `PUT {PROCESSOR}/v1/uploads/{id}/chunks/{i}` with body = header line + that chunk's data lines, and header `X-Line-Offset` = file line number of the chunk's first data line (header is line 1, first data line is line 2). Chunks are independent, and the cross-chunk merge rule (§7.4) is written so the stored result is the same whichever chunk lands first, so completion order does not matter.
    - On network error or a `5xx` with `retryable: true`: retry up to 3 times with 500 ms / 1.5 s / 4 s backoff. Chunks are idempotent (see §8), so a retry never double-counts.
    - On `4xx`: stop and show the error; do not continue with later chunks.
    - Progress UI updates after each chunk with that chunk's report.
@@ -149,9 +149,9 @@ Package manager: **pnpm** workspaces. Node **22 LTS**. Use the current stable ve
 | Situation | Behaviour |
 |---|---|
 | Header missing columns | Pre-flight blocks with the list of missing columns; nothing is sent |
-| Worker unreachable | After 3 retries: "Couldn't reach the processor. Your file wasn't stored. Try again." Upload stays `processing` |
-| A chunk returns 422 | Stop; show the reason from the response |
-| User closes the tab mid-upload | Upload stays `processing`; it never appears in the dataset switcher. Re-uploading the same file works because only *complete* uploads trigger the duplicate check |
+| Worker unreachable | After 3 retries: "Couldn't reach the processor. Your file wasn't stored. Try again." Upload stays `processing`; choosing the same file again continues it |
+| A chunk returns 422 | Stop and cancel the other chunks in flight; show the reason from the response |
+| User closes the tab mid-upload | Upload stays `processing`; it never appears in the dataset switcher. Choosing the same file again **resumes** it: `POST /v1/uploads` finds the unfinished upload of the same bytes and shape, returns its id with the chunks already recorded, and the UI sends only the rest. Only *complete* uploads trigger the duplicate check |
 | `complete` returns `missing_chunks` | UI re-sends only the missing indices once, then calls `complete` again |
 
 ### 5.3 Dashboard flow
@@ -192,6 +192,7 @@ Validation (zod): filename ≤ 200 chars; `sizeBytes` ≤ 10 MB; `sha256` 64 hex
 
 Responses:
 - `201 { "uploadId": "uuid" }`
+- `200 { "uploadId": "uuid", "resumed": true, "receivedChunks": [ <chunk reports, §6.3> ] }` — an unfinished upload of the same bytes, `totalRows` and `chunkCount` already exists; the client sends only the chunks not listed
 - `409 { "error": "already_uploaded", "details": { "uploadId": "uuid", "completedAt": "iso" } }`
 - `422 { "error": "missing_columns", "details": { "columns": ["latency_unit"] } }`
 
@@ -568,8 +569,9 @@ Query params:
 | `services` | comma-separated service ids, optional |
 | `outcome` | `all` (default) · `failures` · `slow` · `flagged` · `rejected` |
 | `agent` | optional exact match |
-| `cursor` | opaque base64 of `(checked_at, service_id, agent)` |
-| `limit` | default 100, max 200 |
+| `cursor` | opaque base64 of `(checked_at, service_id, agent)`. Mutually exclusive with `offset` |
+| `offset` | rows to skip, for jumping to a page number. Mutually exclusive with `cursor` |
+| `limit` | default 100, max 200. The UI offers 10/20/50/100 |
 
 Dates outside the dataset range → `422 date_out_of_range` with the valid range in `details`. Neither `date` nor `from/to` → the whole dataset.
 
@@ -671,7 +673,9 @@ Dataset switcher (completed uploads), period switcher (from `periods`), time zon
 - Filter bar: date mode (One day / Date range), date input(s) limited to the dataset range, services multi-select, outcome, agent.
 - Changing any filter resets the cursor.
 - Table columns: time, service, agent, status, latency, flags. Row expands to show raw timestamp, source line, region and a plain explanation of each flag.
-- "Load more" button (keyset), plus total count.
+- Paging: 10/20/50/100 rows a page (default 20), with the row range, total count, Previous/Next and numbered page buttons. Only the current page is in the DOM.
+- Stepping uses the keyset cursor: it points forward only, so the client keeps the cursor that produced each page it has visited and re-uses it to go back. Changing any filter or the page size discards that trail.
+- Jumping to a page number uses `offset`, because no cursor exists for a page nobody has visited. `cursor` and `offset` together are rejected with 422. Offset is safe here — a completed upload is immutable, so rows cannot shift between requests, and the row count is bounded by the 200,000-row upload limit.
 - Empty result: explain which filter excluded everything and offer "Clear filters".
 
 ### 13.4 Loading and errors
