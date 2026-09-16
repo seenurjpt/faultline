@@ -59,24 +59,37 @@ Vercel only, never in the repository.
    ```bash
    npx wrangler login
    ```
-3. Store the database URL as a **secret**, not a var, so it is never printed
-   in config or logs:
-   ```bash
-   npx wrangler secret put DATABASE_URL --config worker/wrangler.jsonc
-   # paste the Neon pooled connection string when prompted
-   ```
-4. Deploy:
+3. **Register your workers.dev subdomain.** Dashboard →
+   **Workers & Pages** → **Subdomain**, pick a name and save. Without this
+   there is no certificate for `*.workers.dev` on your account, so the URL
+   fails the TLS handshake even after a successful deploy.
+4. **Deploy first.** A secret attaches to an existing script, so
+   `wrangler secret put` fails with `code: 10007 — This Worker does not
+   exist on your account` until the Worker has been deployed once:
    ```bash
    npm run worker:deploy
    ```
    Note the URL it prints, e.g.
    `https://faultline-processor.your-subdomain.workers.dev`.
-5. Check health:
+
+   The first deploy runs without `DATABASE_URL`, which is fine: `/v1/health`
+   answers `500 not_configured` until step 5, and no other endpoint is
+   reachable without it.
+5. Store the database URL as a **secret**, not a var, so it is never printed
+   in config or logs:
+   ```bash
+   npx wrangler secret put DATABASE_URL --config worker/wrangler.jsonc
+   # paste the Neon pooled connection string when prompted
+   ```
+   Setting a secret redeploys the Worker automatically. Confirm it landed
+   with `npx wrangler secret list --config worker/wrangler.jsonc`.
+6. Check health:
    ```bash
    curl https://faultline-processor.your-subdomain.workers.dev/v1/health
    # {"ok":true,"db":true}
    ```
    `"db":false` means the secret is wrong or Neon is unreachable.
+   A TLS or DNS failure instead means step 3 is still outstanding.
 
 ---
 
@@ -177,7 +190,10 @@ npm run worker:dev             # http://localhost:8787
 
 | Symptom | Likely cause |
 |---|---|
+| `secret put` fails: `This Worker does not exist on your account [code: 10007]` | The Worker has never been deployed. Run `npm run worker:deploy` first, then set the secret. |
+| Worker URL times out, or curl reports a TLS handshake failure | The workers.dev subdomain is not registered. Dashboard → Workers & Pages → Subdomain. The deploy succeeds and warns about this, but the URL cannot serve until it is done. |
 | `{"ok":true,"db":false}` | Worker secret missing or wrong: re-run `wrangler secret put DATABASE_URL` |
+| `{"error":"not_configured"}` from the Worker | Deployed, but `DATABASE_URL` was never set as a secret |
 | CORS error on upload | Vercel URL not in `ALLOWED_ORIGINS`, or Worker not redeployed after editing it |
 | Dashboard says "database isn't configured" | `DATABASE_URL` missing on Vercel, or the deploy predates adding it |
 | Upload stalls on batch 1 | `NEXT_PUBLIC_PROCESSOR_URL` wrong, or the Worker is not deployed |
