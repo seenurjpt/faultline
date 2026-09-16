@@ -68,6 +68,18 @@ function parseLatency(
 ): number | null {
   const unit = rawUnit.trim().toLowerCase();
 
+  // The unit flags describe the column, not the conversion, so they are set
+  // even when there is no value to convert. SPEC §12.1 counts the "Seconds
+  // unit" column per row reporting seconds, and ~1.2% of those rows have a
+  // blank latency; flagging only converted values undercounts every file.
+  if (unit === "s") {
+    flags.push("latency_unit_seconds");
+  } else if (unit !== "ms") {
+    // An unrecognised unit makes any number meaningless, so it is dropped
+    // from latency statistics rather than assumed to be milliseconds.
+    flags.push("latency_unit_unknown");
+  }
+
   if (rawLatency === "") {
     flags.push("latency_missing");
     return null;
@@ -83,17 +95,8 @@ function parseLatency(
     return null;
   }
 
-  if (unit === "s") {
-    flags.push("latency_unit_seconds");
-    return Math.round(value * 1000);
-  }
-  if (unit === "ms") {
-    return Math.round(value);
-  }
-
-  // An unrecognised unit makes the number meaningless, so it is dropped from
-  // latency statistics rather than assumed to be milliseconds.
-  flags.push("latency_unit_unknown");
+  if (unit === "s") return Math.round(value * 1000);
+  if (unit === "ms") return Math.round(value);
   return null;
 }
 

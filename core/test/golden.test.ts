@@ -8,10 +8,14 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  clean,
+  createContext,
   detectIncidents,
+  headerIndex,
   median,
   mergeChecks,
   mergeKey,
+  parseLine,
   processChunk,
   splitLines,
   stripBom,
@@ -77,6 +81,35 @@ function runFixture(path: string, chunkRows = 2000): Processed {
   let rejected = 0;
   let merged = 0;
 
+  // SPEC §12.1 counts columns like "Seconds unit" and "Epoch" per *row* in
+  // the file. processChunk already merges duplicates within its chunk, so
+  // counting its output would lose one instance per merged pair. These
+  // counts therefore come from cleaning each row on its own.
+  const ctx = createContext();
+  const headerLength = parseLine(header).length;
+  const index = headerIndex(header);
+  const unitColumn = index.latency_unit;
+  body.forEach((line, i) => {
+    const fields = parseLine(line);
+    const result = clean(fields, index, 2 + i, ctx, headerLength);
+    if (result.kind === "check") {
+      for (const flag of result.check.flags) {
+        flagCounts[flag] = (flagCounts[flag] ?? 0) + 1;
+      }
+      return;
+    }
+    // A rejected row still declared a unit, and §12.1's "Seconds unit"
+    // column counts the file's rows, not just the ones that survived. The
+    // `999` row in the 14d and 21d files reports seconds.
+    if (unitColumn !== undefined) {
+      const unit = (fields[unitColumn] ?? "").trim().toLowerCase();
+      if (unit === "s") {
+        flagCounts.latency_unit_seconds =
+          (flagCounts.latency_unit_seconds ?? 0) + 1;
+      }
+    }
+  });
+
   for (let start = 0; start < body.length; start += chunkRows) {
     const slice = body.slice(start, start + chunkRows);
     const result = processChunk(`${header}\n${slice.join("\n")}`, 2 + start);
@@ -84,12 +117,6 @@ function runFixture(path: string, chunkRows = 2000): Processed {
     merged += result.counts.mergedInChunk;
 
     for (const check of result.checks) {
-      // Per-row flag counts are taken before the cross-chunk merge, matching
-      // how SPEC §12.1 counts conversions.
-      for (const flag of check.flags) {
-        flagCounts[flag] = (flagCounts[flag] ?? 0) + 1;
-      }
-
       const key = mergeKey(check);
       const existing = checks.get(key);
       if (existing === undefined) {

@@ -240,15 +240,69 @@ function main(): void {
     }
   }
 
-  // SPEC §9: compare against the provided log by overlap, since the log uses
-  // 0-based day numbers and approximate times.
+  // SPEC §9: compare against the provided log by overlap. The log uses 0-based
+  // day numbers counted from each file's own start date, and its windows
+  // include healthy flapping checks at the edges, so an exact boundary match
+  // would fail on incidents this rule detects correctly.
   const logPath = join(FIXTURES, "dataset_incident_log.json");
   if (existsSync(logPath)) {
-    const log = JSON.parse(readFileSync(logPath, "utf8")) as unknown;
-    const entries = Array.isArray(log) ? log : (log as { incidents?: unknown[] }).incidents ?? [];
+    type LogEntry = {
+      days: number;
+      start: string;
+      incidents: Record<string, string>;
+    };
+    const log = JSON.parse(readFileSync(logPath, "utf8")) as Record<
+      string,
+      LogEntry
+    >;
+
+    let logged = 0;
+    let matched = 0;
+    const unmatched: string[] = [];
+
+    for (const { file, incidents } of detected) {
+      const entry = log[file];
+      if (!entry) continue;
+      const fileStart = Date.parse(`${entry.start}T00:00:00Z`);
+
+      for (const [label, window] of Object.entries(entry.incidents)) {
+        logged++;
+        // "svc-search day 4" → service and a 0-based day from the file start.
+        const parsed = /^(\S+)\s+day\s+(\d+)$/.exec(label.trim());
+        // "check-points 48-67 (~12:00-16:45 UTC)" → the slot range that day.
+        const points = /check-points\s+(\d+)-(\d+)/.exec(window);
+        if (!parsed || !points) {
+          unmatched.push(`${file}: could not read "${label}"`);
+          continue;
+        }
+
+        const serviceId = parsed[1];
+        const dayStart = fileStart + Number(parsed[2]) * 86_400_000;
+        const from = dayStart + Number(points[1]) * SLOT_MS;
+        const to = dayStart + (Number(points[2]) + 1) * SLOT_MS;
+
+        const hit = incidents.find(
+          (i) =>
+            i.serviceId === serviceId &&
+            i.confirmed &&
+            i.start.getTime() < to &&
+            i.end.getTime() > from,
+        );
+        if (hit) matched++;
+        else unmatched.push(`${file}: ${label} ${window}`);
+      }
+    }
+
     console.log(
-      `\nLogged incidents: ${entries.length}. Confirmed by detection: ${confirmedTotal}.`,
+      `\nLogged incidents: ${logged}. Matched by overlap: ${matched}. ` +
+        `Confirmed incidents detected: ${confirmedTotal}.`,
     );
+    for (const miss of unmatched) console.log(`  unmatched  ${miss}`);
+    if (confirmedTotal > matched) {
+      console.log(
+        `  note: ${confirmedTotal - matched} confirmed incident(s) are not in the log.`,
+      );
+    }
   } else {
     console.log(`\nConfirmed incidents detected: ${confirmedTotal}.`);
     console.log("(dataset_incident_log.json not found, so no comparison was made.)");

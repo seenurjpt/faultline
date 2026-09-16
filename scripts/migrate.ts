@@ -55,10 +55,20 @@ async function main(): Promise<void> {
     // Neon's HTTP driver sends one statement per call, so a migration file is
     // split on semicolons at the start of a line. Statements here are plain
     // DDL with no function bodies, so this split is safe.
+    //
+    // Each chunk carries the comment block that preceded it, so leading `--`
+    // lines are stripped rather than used to reject the chunk — otherwise any
+    // statement documented with a comment is silently skipped.
     const statements = text
       .split(/;\s*$/m)
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0 && !/^--/.test(s.replace(/\n/g, " ").trim()));
+      .map((s) =>
+        s
+          .split("\n")
+          .filter((line) => !/^\s*--/.test(line))
+          .join("\n")
+          .trim(),
+      )
+      .filter((s) => s.length > 0);
 
     for (const statement of statements) {
       await sql.query(statement);
