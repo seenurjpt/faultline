@@ -4,11 +4,11 @@ import Link from "next/link";
 import * as Select from "@radix-ui/react-select";
 import * as ToggleGroup from "@radix-ui/react-toggle-group";
 import * as Tooltip from "@radix-ui/react-tooltip";
-import { CaretDown, Check } from "@phosphor-icons/react";
+import { CaretDown, Check, Folders, UploadSimple } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import { FaultGlyph, cx } from "../ui/primitives";
 import { formatRange, middleTruncate } from "@/lib/format";
-import { useDashboardState } from "@/lib/url-state";
+import { useDashboardState, useViewState } from "@/lib/url-state";
 import type { DatasetSummary, Period } from "@/lib/types";
 
 const TRIGGER =
@@ -176,15 +176,21 @@ export function TopBar({
   onUploadClick: () => void;
   onManageClick: () => void;
 }) {
-  const [state, setState] = useDashboardState();
+  // Dataset and period re-render the server component; the timezone toggle is
+  // display-only, so it stays a shallow URL update.
+  const [state, setState, isPending] = useDashboardState();
+  const [view, setView] = useViewState();
   // DESIGN §5.4: under 720px the dataset and period controls collapse.
   const [open, setOpen] = useState(false);
 
   // The table headers stick below this one, so they need its height. It is
-  // measured rather than hardcoded because the bar wraps at narrow widths and
-  // grows when the mobile disclosure opens. The value is published as a CSS
-  // variable on <html>, which is the nearest common ancestor of the header
-  // and the tables.
+  // measured rather than hardcoded because the row is sized by its contents
+  // and by the font once it loads, and those differ per breakpoint. The
+  // disclosure panel is deliberately not part of this: it is positioned over
+  // the page, so opening it must not push the table headers down.
+  //
+  // The value is published as a CSS variable on <html>, the nearest common
+  // ancestor of the header and the tables.
   const headerRef = useRef<HTMLElement>(null);
   useEffect(() => {
     const el = headerRef.current;
@@ -204,7 +210,22 @@ export function TopBar({
     };
   }, []);
 
+  // Above 768px the controls live in the row itself, so a disclosure left
+  // open would re-appear the next time the window narrowed.
+  useEffect(() => {
+    if (!open) return;
+    const wide = window.matchMedia("(min-width: 768px)");
+    const close = () => {
+      if (wide.matches) setOpen(false);
+    };
+    close();
+    wide.addEventListener("change", close);
+    return () => wide.removeEventListener("change", close);
+  }, [open]);
+
   const datasetId = state.dataset || datasets[0]?.id || "";
+  const currentDataset =
+    datasets.find((d) => d.id === datasetId) ?? datasets[0];
 
   const controls = (
     <>
@@ -218,6 +239,18 @@ export function TopBar({
         value={state.period}
         onChange={(key) => setState({ period: key })}
       />
+      {/* Changing either control recomputes the overview on the server, which
+          takes a moment on free-tier compute. Without this the click looks
+          like it did nothing until the new numbers arrive. */}
+      <span
+        aria-live="polite"
+        className={cx(
+          "text-[13px] leading-[18px] text-[var(--shale)] transition-opacity",
+          isPending ? "opacity-100" : "opacity-0",
+        )}
+      >
+        {isPending ? "Updating…" : ""}
+      </span>
     </>
   );
 
@@ -227,63 +260,91 @@ export function TopBar({
           means, so they stay reachable while reading a long logs table. */}
       <header
         ref={headerRef}
-        className="sticky top-0 z-30 bg-[var(--paper)] border-b border-[var(--rule)]"
+        className="sticky top-0 z-30 border-b border-[var(--rule)] bg-[var(--paper)]"
       >
-        <div className="mx-auto max-w-[1360px] px-4 sm:px-8">
-          <div className="flex min-h-14 flex-wrap items-center gap-x-4 gap-y-2 py-2">
+        <div className="relative mx-auto max-w-[1360px] px-4 sm:px-8">
+          {/* One row at every width. It wrapped before, which made the sticky
+              bar three rows tall on a phone and left little of the table
+              visible; the controls that do not fit move into the disclosure
+              below instead. */}
+          <div className="flex min-h-14 items-center gap-2 py-2 sm:gap-3">
             <Link
               href="/"
-              className="flex items-center gap-2 font-display text-[19px] leading-[26px] font-semibold"
+              className="flex shrink-0 items-center gap-2 font-display text-[19px] leading-[26px] font-semibold"
             >
               <FaultGlyph />
-              Faultline
+              <span className="hidden sm:inline">Faultline</span>
             </Link>
 
             <div className="hidden min-w-0 flex-1 items-center gap-3 md:flex">
               {controls}
             </div>
 
-            <div className="ml-auto flex items-center gap-3">
-              <TzToggle
-                value={state.tz}
-                onChange={(tz) => setState({ tz })}
-              />
-              <button
-                type="button"
-                onClick={onManageClick}
-                className="inline-flex min-h-10 items-center rounded-[var(--radius-field)] px-3 text-[15px] leading-[22px] text-[var(--shale)] hover:text-[var(--basalt)]"
-              >
-                Manage files
-              </button>
-              <button
-                type="button"
-                onClick={onUploadClick}
-                className="inline-flex min-h-10 items-center rounded-[var(--radius-field)] border border-[var(--tide)] px-4 text-[15px] leading-[22px] font-medium text-[var(--tide)] hover:bg-[var(--fog)]"
-              >
-                Upload file
-              </button>
-            </div>
-          </div>
-
-          {/* Under 720px the two selects sit behind a disclosure. */}
-          <div className="md:hidden pb-3">
+            {/* Under 720px the dataset and period sit behind this, in the row
+                itself rather than on one of their own. */}
             <button
               type="button"
               onClick={() => setOpen((o) => !o)}
               aria-expanded={open}
-              className="inline-flex min-h-10 items-center gap-2 text-[15px] leading-[22px] text-[var(--tide)]"
+              className="flex min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-field)] border border-[var(--rule)] bg-[var(--paper)] px-3 py-2 text-left text-[13px] leading-[18px] hover:border-[var(--shale)] md:hidden"
             >
-              Dataset and period
+              <span className="min-w-0 flex-1 truncate">
+                {middleTruncate(currentDataset?.filename ?? "Dataset", 22)}
+              </span>
               <CaretDown
                 size={13}
                 weight="bold"
-                className={cx("transition-transform", open && "rotate-180")}
+                className={cx(
+                  "shrink-0 text-[var(--shale)] transition-transform",
+                  open && "rotate-180",
+                )}
               />
             </button>
-            {open && (
-              <div className="mt-2 flex flex-col gap-2">{controls}</div>
-            )}
+
+            <div className="flex shrink-0 items-center gap-1 sm:gap-3">
+              <div className="hidden sm:block">
+                <TzToggle value={view.tz} onChange={(tz) => setView({ tz })} />
+              </div>
+              {/* Labels would not fit beside everything else on a phone, so
+                  the actions become icons with accessible names. */}
+              <button
+                type="button"
+                onClick={onManageClick}
+                aria-label="Manage files"
+                title="Manage files"
+                className="inline-flex h-10 min-w-10 items-center justify-center rounded-[var(--radius-field)] px-0 text-[var(--shale)] hover:bg-[var(--fog)] hover:text-[var(--basalt)] sm:px-3 sm:text-[15px] sm:leading-[22px]"
+              >
+                <Folders size={17} className="sm:hidden" />
+                <span className="hidden sm:inline">Manage files</span>
+              </button>
+              <button
+                type="button"
+                onClick={onUploadClick}
+                aria-label="Upload file"
+                title="Upload file"
+                className="inline-flex h-10 min-w-10 items-center justify-center rounded-[var(--radius-field)] border border-[var(--tide)] px-0 font-medium text-[var(--tide)] hover:bg-[var(--fog)] sm:px-4 sm:text-[15px] sm:leading-[22px]"
+              >
+                <UploadSimple size={17} className="sm:hidden" />
+                <span className="hidden sm:inline">Upload file</span>
+              </button>
+            </div>
           </div>
+
+          {/* Expands over the page rather than pushing it, so opening it does
+              not shift the rows being read. */}
+          {open && (
+            <div className="absolute inset-x-0 top-full z-40 border-b border-[var(--rule)] bg-[var(--paper)] px-4 pb-4 pt-1 shadow-lg md:hidden sm:px-8">
+              <div className="mx-auto flex max-w-[1360px] flex-col gap-2">
+                {controls}
+                <div className="flex items-center justify-between gap-3 pt-1">
+                  <span className="text-[13px] leading-[18px] text-[var(--shale)]">
+                    Times shown in
+                  </span>
+                  <TzToggle value={view.tz} onChange={(tz) => setView({ tz })} />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </header>
     </Tooltip.Provider>

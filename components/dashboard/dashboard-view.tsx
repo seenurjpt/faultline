@@ -22,7 +22,7 @@ import { FilterBar, type FilterState } from "./filter-bar";
 import { LogsTable, RejectedTable } from "./logs-table";
 import { UploadModal } from "../upload/upload-modal";
 import { ManageDatasetsModal } from "./manage-datasets-modal";
-import { useDashboardState, useLogsState } from "@/lib/url-state";
+import { useLogsState, useViewState } from "@/lib/url-state";
 import { useLogs } from "@/lib/use-logs";
 import { formatDate, formatNumber, parseUtcDayKey } from "@/lib/format";
 
@@ -35,7 +35,7 @@ export function DashboardView({
   overview: Overview;
   agents: string[];
 }) {
-  const [dash, setDash] = useDashboardState();
+  const [dash, setDash] = useViewState();
   const [filters, setFilters] = useLogsState();
   const [highlight, setHighlight] = useState<string | null>(null);
   const [pulse, setPulse] = useState(false);
@@ -61,12 +61,14 @@ export function DashboardView({
   });
 
   const logsTotal = logsQuery.total;
-  // The endpoint returns check rows or rejected rows depending on `outcome`,
-  // so which shape came back is decided by the filter, not by inspection.
-  const logRows =
-    filters.outcome === "rejected" ? [] : (logsQuery.rows as LogRow[]);
-  const rejectedRows =
-    filters.outcome === "rejected" ? (logsQuery.rows as RejectedRow[]) : [];
+  // The endpoint returns check rows or rejected rows depending on `outcome`.
+  // The hook only hands back rows that belong to the filters currently
+  // selected, so the filter is a safe way to know which shape arrived — and
+  // while a switch is in flight it hands back none, rather than the previous
+  // outcome's rows in the other shape.
+  const isRejectedView = filters.outcome === "rejected";
+  const logRows = isRejectedView ? [] : (logsQuery.rows as LogRow[]);
+  const rejectedRows = isRejectedView ? (logsQuery.rows as RejectedRow[]) : [];
 
   // DESIGN §6.2: the coverage warning appears below 99%.
   const lowCoverage = quality.coveragePct < 99;
@@ -170,8 +172,6 @@ export function DashboardView({
   // is absent, and writing it here raced with navigation: opening a freshly
   // uploaded dataset would be overwritten by the id of the page still on
   // screen. The switcher sets it explicitly when the user picks one.
-
-  const isRejectedView = filters.outcome === "rejected";
 
   // After a delete the server component has to re-run, because the dataset
   // list, the overview and the logs all came from it. Deleting the dataset on
