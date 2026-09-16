@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!--
+    The wordmark glyph from DESIGN §6.1: three seismograph strokes of
+    4 / 12 / 6 units, scaled from the 14x16 FaultGlyph to a 32x32 tile.
+
+    A tab strip is busy, so the strokes are drawn a little heavier than a
+    pure scale would give and centred with a 5-unit margin, which keeps
+    them legible once the browser paints this at 16px.
+
+    prefers-color-scheme is honoured inside an SVG favicon by Chrome,
+    Firefox and Safari, so the mark uses the same --fault pink as the
+    wordmark in each theme rather than washing out on a dark tab.
+  -->
+  <style>
+    .stroke { fill: #b4236b; }
+    @media (prefers-color-scheme: dark) {
+      .stroke { fill: #f06aa5; }
+    }
+  </style>
+  <rect class="stroke" x="5" y="12" width="4" height="8" rx="1" />
+  <rect class="stroke" x="14" y="4" width="4" height="24" rx="1" />
+  <rect class="stroke" x="23" y="10" width="4" height="12" rx="1" />
+</svg>

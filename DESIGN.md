@@ -1,6 +1,6 @@
 # Faultline — Design
 
-**UI and visual spec** · behaviour lives in `SPEC.md`; build order lives in `BUILD_PROMPT.md`
+**UI and visual spec** · behaviour lives in `SPEC.md`
 
 ---
 
@@ -83,7 +83,7 @@ Scale (ratio 1.25 from a 15px body):
 | `--t-lg` | 19 / 26 | Panel titles |
 | `--t-xl` | 23 / 30 | Section titles |
 | `--t-2xl` | 29 / 36 | Verdict sentence |
-| `--t-3xl` | 37 / 42 | Upload screen heading |
+| `--t-3xl` | 37 / 42 | Reserved; the upload and manage-files dialog titles use `--t-xl` |
 
 Rules:
 - Sentence case everywhere. No all-caps labels, no tracked-out eyebrows.
@@ -194,21 +194,25 @@ Decisions:
 ```
 The sentence stays; the panel collapses. The toggle is a text button with a caret icon that rotates 180°.
 
-### 5.3 Upload screen (`/upload`)
+### 5.3 Upload modal
+
+There is no separate upload page. **Upload file** in the top bar (or **Upload a file** on the empty dashboard) opens a Radix Dialog over the dashboard, 760px wide at most, on a `--fog` panel with the standard scrim. The dashboard stays behind it, so "Open dashboard" on the receipt closes the modal and navigates rather than reloading.
 
 ```
-┌ top bar (same as dashboard, without dataset/period controls) ───────────────────┐
-
-  Process a monitoring file                                           (cols 1–5)
-  Faultline reads your CSV in batches, cleans each      ┌ intake tray (cols 6–12) ─────────┐
-  batch in the cloud, and stores every check it         │                                   │
-  keeps, merges or rejects, so the numbers can be       │   Drop a .csv here                │
-  traced back to the file.                              │   or  [Choose file]               │
-                                                        │                                   │
-  What gets checked                                     │   Up to 10 MB. Required columns:  │
-  Timestamps in any zone, units, duplicates,            │   service_id, service_name, …     │
-  impossible values. Nothing is silently dropped.       └───────────────────────────────────┘
+┌ Process a monitoring file                                                  [×] ┐
+│ Faultline reads your CSV in batches, cleans each batch in the cloud, and       │
+│ stores every check it keeps, merges or rejects, so the numbers can be traced   │
+│ back to the file.                                                              │
+│                                                                                │
+│ ┌ intake tray (dashed border while empty) ─────────────────────────────────┐   │
+│ │   Drop a .csv here                                                       │   │
+│ │   or  [Choose file]                                                      │   │
+│ │   Up to 10 MB. Required columns: service_id, service_name, …             │   │
+│ └──────────────────────────────────────────────────────────────────────────┘   │
+└────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+Closing the modal (×, Esc or a click on the scrim) while batches are in flight does not close it. Instead an inline `role="alertdialog"` appears under the tray, with a `--fault` left rule: "Stop processing this file? Batches already sent are kept, and nothing is added to the dashboard until the file finishes." — **Keep processing** (secondary, focused) / **Stop and close** (text). Closing at any other stage resets the tray.
 
 After a file is chosen, the tray becomes the pre-flight card:
 
@@ -242,6 +246,31 @@ On completion, the tray becomes the **receipt**:
 
 Duplicate file (409): the tray shows "This file was already processed on 15 Sep 2026." with **Open existing dataset** (primary) and **Process again** (secondary).
 
+### 5.3a Manage files dialog
+
+**Manage files** in the top bar opens a second, narrower dialog (640px) that lists every completed dataset. It exists as its own surface, not as a control inside the dataset switcher, because a Radix Select item is a choice: a delete button inside one would fire on the same click that picks the dataset.
+
+```
+┌ Manage files                                                          [×] ┐
+│ Deleting a file removes its checks, rejected rows and batch records.      │
+│ This cannot be undone.                                                    │
+│                                                                           │
+│ ┌ monitoring_checks_30d_seed404.csv   shown now                 Delete ┐  │
+│ │ 6 Apr – 5 May 2025 · 15,551 checks                                   │  │
+│ └───────────────────────────────────────────────────────────────────────┘  │
+│ ┌ monitoring_checks_9d_seed101.csv                               Delete ┐  │
+│ │ 8 – 16 May 2025 · 4,664 checks                                       │  │
+│ └───────────────────────────────────────────────────────────────────────┘  │
+└───────────────────────────────────────────────────────────────────────────┘
+```
+
+- Each row: filename (medium weight, truncated), "shown now" in `--shale` on the current dataset, then range and stored-check count on a second line. **Delete** is a text button in `--fault`.
+- Pressing Delete turns the row's border `--fault` and opens an inline `role="alertdialog"` inside it: "Delete {filename} and its {n} stored checks?" — **Keep it** (secondary, focused) / **Delete permanently** (text, `--fault`; reads "Deleting…" while in flight). Only one row confirms at a time.
+- While a delete is in flight the dialog cannot be closed; every other button is disabled.
+- Errors appear as an inline error above the list with the server's message. A 404 is shown as "That dataset no longer exists." rather than as success.
+- Empty list: "No files to manage."
+- After a delete the dashboard's dataset list updates in place; if the deleted file was the one shown, the newest remaining dataset is selected.
+
 ### 5.4 Responsive
 
 | Width | Changes |
@@ -263,6 +292,7 @@ Minimum touch target 40×40px.
 - **One row at every width**, because a sticky bar that wraps to three rows on a phone leaves almost none of the table visible. What does not fit is dropped rather than wrapped: under 640px the wordmark is the glyph alone and "Manage files"/"Upload file" become icon buttons with `aria-label` and `title`; under 768px the dataset and period selects collapse into a disclosure whose trigger shows the current filename, and the UTC/IST toggle moves inside it.
 - The disclosure panel is positioned **over** the page rather than inside the bar, so opening it does not push the rows being read down, and `--top-bar-h` stays constant. It closes itself once the viewport is wide enough to show the controls inline.
 - Wordmark "Faultline" in Familjen Grotesk 600, 19px, with a small 3-spike glyph drawn in SVG (three vertical strokes of 4/12/6px in `--fault`). No logo image.
+- The favicon is the same mark: `app/icon.svg` keeps the 4/12/6 stroke ratio, scaled onto a 32px tile with heavier strokes so it survives being painted at 16px in a tab. It carries its own `prefers-color-scheme` rule, so the mark uses the light or dark `--fault` pink rather than washing out on a dark tab strip. `app/favicon.ico` is the same three strokes at 32px for browsers that ignore SVG icons; it cannot carry a media query, so it is fixed to the light-theme pink.
 - Dataset select: shows filename (middle-truncated) and date range in `--shale`.
 - Period select: "Whole file", then months; months with partial data show "25 of 30 days" in `--shale` inside the option.
 - UTC/IST: Radix ToggleGroup, two segments, 6px radius. Tooltip: "Changes how times are shown. Filters and calculations always use UTC."

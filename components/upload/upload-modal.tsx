@@ -3,7 +3,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "@phosphor-icons/react";
 import { useRouter } from "next/navigation";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button, Skeleton, cx } from "../ui/primitives";
 import { UploadPanel } from "./upload-panel";
 import { useUpload } from "./use-upload";
@@ -31,6 +31,7 @@ export function UploadModal({
   const close = useCallback(() => {
     setConfirmingClose(false);
     setOpening(false);
+    setTarget(null);
     controller.reset();
     onOpenChange(false);
   }, [controller, onOpenChange]);
@@ -70,12 +71,22 @@ export function UploadModal({
   // Timing the close off the navigation call instead closed it immediately,
   // leaving the previous dashboard visible while the new one was still being
   // computed — the thing the loading state exists to avoid.
-  if (opening && target !== null && currentDatasetId === target) {
-    setOpening(false);
-    setTarget(null);
-    controller.reset();
-    onOpenChange(false);
-  }
+  //
+  // This runs in an effect, not during render: closing means calling
+  // onOpenChange, which sets state in the dashboard that owns this modal, and
+  // updating another component while rendering is a React error.
+  const arrived = opening && target !== null && currentDatasetId === target;
+  useEffect(() => {
+    if (!arrived) return;
+    // react-hooks/set-state-in-effect targets state that could be derived
+    // during render instead. This is the other kind: a one-shot reaction to
+    // an external event — the server component re-rendering with the new
+    // dataset after router.push + router.refresh. Closing means calling
+    // onOpenChange, which sets state in the dashboard that owns this modal,
+    // and doing that during render is the React error this replaced.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    close();
+  }, [arrived, close]);
 
   return (
     <Dialog.Root
