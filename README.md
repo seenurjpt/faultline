@@ -52,8 +52,30 @@ To redeploy on demand, see [Running it](#running-it) and `DEPLOYMENT.md`.
 **Why the browser splits the file.** The Worker has a 10 ms CPU budget and a
 1 MB body cap per request. A 10 MB file exceeds both, so the browser reads the
 file, splits it on quote-aware line boundaries, and sends batches of 2,000 rows
-sequentially. Each batch is independently idempotent, so a retry can never
-double-count.
+with up to four in flight at once. Each batch is independently idempotent, so a
+retry can never double-count.
+
+**Why sending batches in parallel does not change a single number.** Two
+things had to be true before the sequential loop could go. First, the
+cross-batch merge in the database had to stop depending on arrival order: it
+used to keep whichever copy of a duplicate *landed first*, which is
+deterministic only when batches land in file order. It now keeps the copy with
+the *lower source line* — the same thing sequential sending produced, but true
+whichever batch wins the race. (This is exact for pairs; a key with three or
+more copies whose lowest line has no latency could in theory differ, and no
+key in any of the five files has more than two copies.) Second, two batches
+upserting overlapping keys in different row orders could deadlock, so every
+batch is sorted by its conflict key before the bulk upsert, which gives all of
+them one lock order. Measured on the 8-batch 30-day file against the real
+database, one batch at a time took 16.8 s and four in flight took 7.4 s — a
+2.3× gain rather than 4×, because Neon's free-tier compute, not the Worker, is
+what absorbs the concurrency. The golden numbers are unchanged.
+
+**Why an interrupted upload is not lost.** Every batch that reached the Worker
+is already in Postgres, so choosing the same file again does not start over:
+`POST /v1/uploads` finds the unfinished upload of the same bytes and shape,
+hands back the batches it already holds, and the browser sends only the rest.
+The batch strip shows those as done from the start, with their real counts.
 
 **Why the Worker never reads data back.** The brief asks the function to parse,
 validate and clean. Keeping reads in Next.js keeps the Worker single-purpose
@@ -293,16 +315,18 @@ noise** — which is precisely what the two sections separate.
 
 ## With more time
 
-**Uploads that survive the tab closing.** This is the clearest limitation today.
-The browser splits the CSV and sends chunks sequentially, because Workers Free
-allows 10 ms CPU and a 1 MB body per request — the Worker can neither hold the
-whole file nor fetch it. So closing the tab mid-upload stops it. Chunks already
-sent are durably stored and idempotent, but the upload never reaches `complete`
-and so never appears in the switcher. The fix is to upload the raw file once to
-object storage (R2), have the write trigger a Worker, and chunk server-side with
-a queue or Durable Object coordinating, with the page polling status. I did not
-build it because R2 and Durable Objects fall outside the no-card free tier this
-was scoped to.
+**Uploads that finish without the tab.** The browser still drives the upload,
+because Workers Free allows 10 ms CPU and a 1 MB body per request — the Worker
+can neither hold the whole file nor fetch it. Closing the tab mid-upload stops
+it; the batches already sent are kept, and choosing the same file again
+resumes from where it stopped, but someone still has to come back. Genuinely
+unattended processing means uploading the raw file once to object storage
+(R2), having the write trigger a Worker, and chunking server-side with a queue
+or Durable Object coordinating while the page polls status. I did not build it
+because R2 and Durable Objects fall outside the no-card free tier this was
+scoped to. On the same tier, a stuck `processing` upload is also still
+invisible until the file is chosen again; listing those in the Manage files
+dialog with a discard option is the cheap next step.
 
 **Surface interrupted uploads.** Cheaper than the above and worth doing first:
 an upload stuck in `processing` is currently invisible and permanent. It should

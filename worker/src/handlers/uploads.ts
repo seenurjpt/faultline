@@ -6,8 +6,10 @@ import {
   completeUpload,
   createUpload,
   findCompletedBySha,
+  findResumableBySha,
   getUpload,
   missingChunks,
+  receivedChunkReports,
   writeChunk,
   type Sql,
 } from "../db";
@@ -79,6 +81,21 @@ export async function handleCreateUpload(
         },
       );
     }
+  }
+
+  // SPEC §5.2: an earlier attempt at the same bytes that never finished is
+  // continued rather than duplicated. Its recorded batches go back with the
+  // id so the client sends only what is missing; every batch is idempotent,
+  // so a client that ignores the list and resends everything is still fine.
+  const resumable = await findResumableBySha(
+    sql,
+    input.sha256,
+    input.totalRows,
+    input.chunkCount,
+  );
+  if (resumable) {
+    const receivedChunks = await receivedChunkReports(sql, resumable.id);
+    return json({ uploadId: resumable.id, resumed: true, receivedChunks }, 200, cors);
   }
 
   const uploadId = await createUpload(sql, input);

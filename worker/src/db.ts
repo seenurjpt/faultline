@@ -94,7 +94,19 @@ export async function writeChunk(
     issues: IssueCounts;
   },
 ): Promise<ChunkWriteResult> {
-  const { uploadId, chunkIndex, checks, rejections } = params;
+  const { uploadId, chunkIndex, rejections } = params;
+
+  // Batches upload in parallel, so two transactions can upsert overlapping
+  // keys at the same time. Postgres takes row locks in statement order, and
+  // two statements that lock the same rows in different orders can deadlock.
+  // Sorting every batch by the conflict key gives them all one order, which
+  // makes a deadlock impossible rather than merely unlikely.
+  const checks = [...params.checks].sort(
+    (a, b) =>
+      cmp(a.serviceId, b.serviceId) ||
+      a.checkedAt.getTime() - b.checkedAt.getTime() ||
+      cmp(a.agent, b.agent),
+  );
 
   // Services first: checks.service_id references them.
   const serviceIds = [...new Set(checks.map((c) => c.serviceId))];
@@ -138,12 +150,23 @@ export async function writeChunk(
                   ${formats}::text[], ${rawTimes}::text[], ${lines}::int[],
                   ${flags}::text[])
            as u(s, t, a, r, sc, l, f, rt, sl, fl)
+      -- The same rule as mergeChecks() in core: a failure beats a success,
+      -- and on a tie the copy seen first wins. "Seen first" is expressed as
+      -- the lower source line rather than the row already in the table, so
+      -- the result is the same whichever batch happens to land first — that
+      -- is what lets batches be sent in parallel without changing a number.
       on conflict (upload_id, service_id, checked_at, agent) do update set
         status_code = case
           when excluded.status_code not between 200 and 399
            and checks.status_code between 200 and 399 then excluded.status_code
+          when checks.status_code not between 200 and 399
+           and excluded.status_code between 200 and 399 then checks.status_code
+          when excluded.source_line < checks.source_line then excluded.status_code
           else checks.status_code end,
-        latency_ms  = coalesce(checks.latency_ms, excluded.latency_ms),
+        latency_ms = case
+          when excluded.source_line < checks.source_line
+            then coalesce(excluded.latency_ms, checks.latency_ms)
+          else coalesce(checks.latency_ms, excluded.latency_ms) end,
         source_line = least(checks.source_line, excluded.source_line),
         flags = (select array_agg(distinct x) from unnest(
                    checks.flags || excluded.flags || array['merged_duplicate'] ||
@@ -182,9 +205,11 @@ export async function writeChunk(
     values (${uploadId}::uuid, ${chunkIndex}, ${params.rowsIn}, ${checks.length},
             ${params.mergedInChunk}, 0, ${rejections.length},
             ${JSON.stringify(params.issues)}::jsonb)
+    -- stored and merged_across_chunks are deliberately not overwritten here:
+    -- the first attempt corrects them below once the upsert result is known,
+    -- and a retry must not replace that with the rows it merely attempted.
     on conflict (upload_id, chunk_index) do update set
       rows_in = excluded.rows_in,
-      stored = excluded.stored,
       merged_in_chunk = excluded.merged_in_chunk,
       rejected = excluded.rejected,
       issue_counts = excluded.issue_counts,
@@ -193,20 +218,120 @@ export async function writeChunk(
 
   const results = await sql.transaction(statements);
 
+  if (checks.length === 0) return { stored: 0, mergedAcrossChunks: 0 };
+
   // The checks upsert is the only statement that returns rows; xmax = 0 marks
   // a genuine insert, anything else was merged into an existing row.
-  let stored = 0;
-  let mergedAcrossChunks = 0;
-  if (checks.length > 0) {
-    const insertIndex = serviceIds.length > 0 ? 1 : 0;
-    const returned = (results[insertIndex] ?? []) as { inserted: boolean }[];
-    for (const row of returned) {
-      if (row.inserted) stored++;
-      else mergedAcrossChunks++;
-    }
+  const insertIndex = serviceIds.length > 0 ? 1 : 0;
+  const returned = (results[insertIndex] ?? []) as { inserted: boolean }[];
+
+  // A retried batch matches its own rows, which the upsert's WHERE skips, so
+  // nothing comes back. The first attempt recorded the real numbers, and
+  // those are what the retry reports rather than a misleading zero.
+  if (returned.length === 0) {
+    const rows = (await sql`
+      select stored, merged_across_chunks
+      from upload_chunks
+      where upload_id = ${uploadId}::uuid and chunk_index = ${chunkIndex}
+    `) as { stored: number; merged_across_chunks: number }[];
+    return {
+      stored: rows[0]?.stored ?? 0,
+      mergedAcrossChunks: rows[0]?.merged_across_chunks ?? 0,
+    };
   }
 
+  let stored = 0;
+  let mergedAcrossChunks = 0;
+  for (const row of returned) {
+    if (row.inserted) stored++;
+    else mergedAcrossChunks++;
+  }
+
+  // The chunk record was written inside the transaction, before the upsert
+  // result existed, so it held the rows attempted rather than the rows
+  // inserted. Recording the real split is what lets a resumed upload report
+  // exact numbers for the batches it skips.
+  await sql`
+    update upload_chunks
+    set stored = ${stored}, merged_across_chunks = ${mergedAcrossChunks}
+    where upload_id = ${uploadId}::uuid and chunk_index = ${chunkIndex}
+  `;
+
   return { stored, mergedAcrossChunks };
+}
+
+function cmp(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * An unfinished upload of the same bytes, so a second attempt continues it
+ * instead of starting over and leaving the first one orphaned. The shape has
+ * to match as well: a batch size change between deploys would make the
+ * recorded indexes mean something else.
+ */
+export async function findResumableBySha(
+  sql: Sql,
+  sha256: string,
+  totalRows: number,
+  chunkCount: number,
+): Promise<{ id: string } | null> {
+  const rows = (await sql`
+    select id
+    from uploads
+    where sha256 = ${sha256}
+      and status = 'processing'
+      and total_rows = ${totalRows}
+      and chunk_count = ${chunkCount}
+    order by created_at desc
+    limit 1
+  `) as { id: string }[];
+  return rows[0] ?? null;
+}
+
+export type ReceivedChunk = {
+  chunkIndex: number;
+  rowsIn: number;
+  stored: number;
+  mergedInChunk: number;
+  mergedAcrossChunks: number;
+  rejected: number;
+  issues: Record<string, number>;
+};
+
+/**
+ * The batches an upload already holds, in the same shape as the report each
+ * one produced when it was first written, so the client can treat them
+ * exactly like batches it just sent.
+ */
+export async function receivedChunkReports(
+  sql: Sql,
+  uploadId: string,
+): Promise<ReceivedChunk[]> {
+  const rows = (await sql`
+    select chunk_index, rows_in, stored, merged_in_chunk,
+           merged_across_chunks, rejected, issue_counts
+    from upload_chunks
+    where upload_id = ${uploadId}::uuid
+    order by chunk_index
+  `) as {
+    chunk_index: number;
+    rows_in: number;
+    stored: number;
+    merged_in_chunk: number;
+    merged_across_chunks: number;
+    rejected: number;
+    issue_counts: Record<string, number> | null;
+  }[];
+  return rows.map((r) => ({
+    chunkIndex: r.chunk_index,
+    rowsIn: r.rows_in,
+    stored: r.stored,
+    mergedInChunk: r.merged_in_chunk,
+    mergedAcrossChunks: r.merged_across_chunks,
+    rejected: r.rejected,
+    issues: r.issue_counts ?? {},
+  }));
 }
 
 /** SPEC §6.4: which chunk indexes have not been recorded yet. */

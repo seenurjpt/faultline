@@ -155,12 +155,18 @@ function PreflightCard({
 
 function BatchTrack({ stage }: { stage: Extract<Stage, { kind: "processing" }> }) {
   const done = stage.batches.filter((b) => b === "done").length;
+  const active = stage.batches.filter((b) => b === "active").length;
   const total = stage.batches.length;
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Batches travel several at a time, so the heading counts what has
+          landed rather than pointing at "the" current one. */}
       <p className="text-[19px] leading-[26px] tnum">
-        Batch {Math.min(done + 1, total)} of {total}
+        {done} of {total} {total === 1 ? "batch" : "batches"} processed
+        {active > 0 && (
+          <span className="text-[var(--shale)]">, {active} in flight</span>
+        )}
       </p>
 
       <ol className="flex flex-wrap gap-1">

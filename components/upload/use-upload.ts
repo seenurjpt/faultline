@@ -87,13 +87,13 @@ export function useUpload(): UploadController {
     setStage({
       kind: "processing",
       pre,
-      batches: Array.from({ length: pre.chunkCount }, (_, i) =>
-        i === 0 ? "active" : "pending",
-      ),
+      batches: Array.from({ length: pre.chunkCount }, () => "pending"),
       stored: 0,
       merged: 0,
       rejected: 0,
-      announcement: `Batch 1 of ${pre.chunkCount} started.`,
+      announcement: `Sending ${pre.chunkCount} ${
+        pre.chunkCount === 1 ? "batch" : "batches"
+      }.`,
     });
 
     void (async () => {
@@ -101,12 +101,22 @@ export function useUpload(): UploadController {
         const summary = await uploadFile(pre, {
           force,
           signal: controller.signal,
+          // Several batches are in flight at once, so each one marks itself
+          // active when it leaves and done when it lands, rather than the
+          // strip advancing one step per batch.
+          onChunkStart: (index: number) => {
+            setStage((prev) => {
+              if (prev.kind !== "processing") return prev;
+              const batches = [...prev.batches];
+              batches[index] = "active";
+              return { ...prev, batches };
+            });
+          },
           onChunk: (report: ChunkReport, index: number, total: number) => {
             setStage((prev) => {
               if (prev.kind !== "processing") return prev;
               const batches = [...prev.batches];
               batches[index] = "done";
-              if (index + 1 < batches.length) batches[index + 1] = "active";
               return {
                 ...prev,
                 batches,
@@ -115,6 +125,15 @@ export function useUpload(): UploadController {
                   prev.merged + report.mergedInChunk + report.mergedAcrossChunks,
                 rejected: prev.rejected + report.rejected,
                 announcement: `Batch ${index + 1} of ${total} processed.`,
+              };
+            });
+          },
+          onResume: (received: number[]) => {
+            setStage((prev) => {
+              if (prev.kind !== "processing") return prev;
+              return {
+                ...prev,
+                announcement: `${received.length} of ${prev.batches.length} batches were already stored by an earlier attempt. Sending the rest.`,
               };
             });
           },
@@ -131,12 +150,18 @@ export function useUpload(): UploadController {
           return;
         }
 
-        // Mark the batch that failed so the strip shows where it stopped.
+        // Mark the batch that failed so the strip shows where it stopped. The
+        // other batches in flight were cancelled because of it, not by their
+        // own fault, so they go back to waiting rather than being marked.
+        const failedIndex =
+          err instanceof UploadError && typeof err.details.chunkIndex === "number"
+            ? err.details.chunkIndex
+            : -1;
         setStage((prev) => {
           if (prev.kind !== "processing") return prev;
-          const batches = [...prev.batches];
-          const active = batches.indexOf("active");
-          if (active >= 0) batches[active] = "failed";
+          const batches = prev.batches.map((state, i) =>
+            state !== "active" ? state : i === failedIndex ? "failed" : "pending",
+          );
           return { ...prev, batches };
         });
 
