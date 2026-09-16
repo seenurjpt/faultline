@@ -40,6 +40,31 @@ export const logsParsers = {
 };
 
 /**
+ * The logs filters at rest. `mode` is deliberately absent: which date control
+ * the user prefers is not a filter, and resetting it would move the UI under
+ * them for no reason.
+ */
+export function clearedLogsFilters(): {
+  date: null;
+  from: null;
+  to: null;
+  services: string[];
+  outcome: (typeof OUTCOME_VALUES)[number];
+  agent: null;
+} {
+  // A function, not a shared constant: the `services` array would otherwise be
+  // handed to every caller, and one mutation would poison every later reset.
+  return {
+    date: null,
+    from: null,
+    to: null,
+    services: [],
+    outcome: "all",
+    agent: null,
+  };
+}
+
+/**
  * `dataset` and `period` are read by the server component that renders the
  * overview, so they need `shallow: false`: the default shallow update changes
  * the URL in the browser only, which left the switcher label moving while the

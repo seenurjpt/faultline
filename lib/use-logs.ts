@@ -246,17 +246,29 @@ export function useLogs(filters: LogsFilters): LogsPagination {
 
   const query = useQuery({
     queryKey: ["logs", filterKey, pageSize, at.cursor, at.offset],
-    queryFn: () => fetchPage(filters, at, pageSize),
+    // The filters travel with the rows, so a consumer can tell whether what
+    // it is holding describes the filters currently selected.
+    queryFn: async () => ({
+      key: filterKey,
+      ...(await fetchPage(filters, at, pageSize)),
+    }),
     enabled: filters.datasetId.length > 0,
     // Holds the page already on screen while the next one loads, so the table
-    // does not collapse to a skeleton on every step.
+    // does not collapse to a skeleton on every step of the pager.
     placeholderData: keepPreviousData,
   });
 
-  const nextCursor = query.data?.nextCursor ?? null;
-  const total = query.data?.total ?? 0;
+  // keepPreviousData means query.data can belong to the *previous* filters
+  // while the new ones are in flight. Rendering those rows would be wrong in
+  // every case and unsafe in one: `rejected` returns a different row shape
+  // entirely, so the table would read fields that do not exist on them.
+  const fresh = query.data?.key === filterKey ? query.data : undefined;
+  const stale = query.data !== undefined && fresh === undefined;
+
+  const nextCursor = fresh?.nextCursor ?? null;
+  const total = fresh?.total ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
-  const rows = (query.data?.rows ?? []) as (LogRow | RejectedRow)[];
+  const rows = (fresh?.rows ?? []) as (LogRow | RejectedRow)[];
 
   const goPrev = useCallback(() => {
     setPosition((prev) => retreat(prev, filterKey));
@@ -279,6 +291,15 @@ export function useLogs(filters: LogsFilters): LogsPagination {
     },
     [filterKey],
   );
+
+  // Narrowing a filter while on a deep page can leave the position past the
+  // end of the new result. Clamping during render rather than after it means
+  // the empty page is never painted: the request for the last real page goes
+  // out in the same pass.
+  if (fresh && current.index >= pageCount && current.index > 0) {
+    const clamped = jumpTo(current, filterKey, pageCount - 1);
+    if (clamped.index !== current.index) setPosition(clamped);
+  }
 
   // Changing the page size changes what "page 3" means, so the only honest
   // landing place is the first page.
@@ -306,7 +327,11 @@ export function useLogs(filters: LogsFilters): LogsPagination {
     hasNext: nextCursor !== null,
     goPrev,
     goNext,
-    isPending: query.isPending,
+    // True whenever there are no rows worth showing yet: the first load, or a
+    // filter change whose result has not arrived. Both want the skeleton.
+    isPending: query.isPending || stale,
+    // True while any request is in flight, including one that is merely
+    // replacing the page on screen. Drives the pager's disabled state.
     isFetching: query.isFetching,
     isError: query.isError,
     error: query.error,

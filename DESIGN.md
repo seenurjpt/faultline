@@ -259,7 +259,9 @@ Minimum touch target 40×40px.
 
 ### 6.1 Top bar
 - Height 56px, `--paper` background, bottom 1px `--rule`.
-- **Sticks to the top of the viewport.** The dataset and period controls decide what every number on the page means, and the logs table is long enough to scroll them away; keeping them in view means the reader never has to scroll back up to check which file or month they are looking at. The bar publishes its measured height as `--top-bar-h` on `<html>`, and the table headers stick at that offset so the two never overlap — measured rather than hardcoded, because the bar wraps at narrow widths and grows when the mobile disclosure opens.
+- **Sticks to the top of the viewport.** The dataset and period controls decide what every number on the page means, and the logs table is long enough to scroll them away; keeping them in view means the reader never has to scroll back up to check which file or month they are looking at. The bar publishes its measured height as `--top-bar-h` on `<html>`, and the table headers stick at that offset so the two never overlap.
+- **One row at every width**, because a sticky bar that wraps to three rows on a phone leaves almost none of the table visible. What does not fit is dropped rather than wrapped: under 640px the wordmark is the glyph alone and "Manage files"/"Upload file" become icon buttons with `aria-label` and `title`; under 768px the dataset and period selects collapse into a disclosure whose trigger shows the current filename, and the UTC/IST toggle moves inside it.
+- The disclosure panel is positioned **over** the page rather than inside the bar, so opening it does not push the rows being read down, and `--top-bar-h` stays constant. It closes itself once the viewport is wide enough to show the controls inline.
 - Wordmark "Faultline" in Familjen Grotesk 600, 19px, with a small 3-spike glyph drawn in SVG (three vertical strokes of 4/12/6px in `--fault`). No logo image.
 - Dataset select: shows filename (middle-truncated) and date range in `--shale`.
 - Period select: "Whole file", then months; months with partial data show "25 of 30 days" in `--shale` inside the option.
@@ -354,7 +356,13 @@ Columns: Service · Availability · Nines · Downtime · Error budget used · In
 
 - Sticky header, `--t-sm`, header text `--shale` 500, 1px bottom `--rule`.
 - Row height 40px; zebra: none; separators: 1px `--rule`.
-- Down rows: 3px left rule in `--fault` and status in `--fault` 600. Slow rows: latency in `--ochre-ink`.
+- Down rows: 3px left rule in `--fault` and status in `--fault` 600. Slow rows: latency in `--ochre-ink`. The rule is an inset box-shadow on the first cell, not a left border: inside a `border-collapse` table, adjacent rows' left borders merge into one unbroken bar that reads as an element separate from the rows.
+- The logs panel has no top padding and the header cells carry none: the table header *is* the panel top edge.
+- **No ancestor of the table may create a scroll container**, or the sticky header sticks to that box instead of the page and its top offset pushes it down, leaving a band of panel above it. Per the CSS overflow spec a non-visible value on one axis computes the other to `auto`, so `overflow-x-auto` on the table wrapper was enough to break it — as was `overflow-hidden` on the panel. Both are gone; the columns are percentage-based under `table-layout: fixed`, so nothing needs to scroll sideways. `overflow-x-clip` on `<main>` is fine: `clip` creates no scroll container, which is exactly how it differs from `hidden`.
+- Two related traps: margins are ignored on `<thead>` (CSS 2.1 §17.5.3), so a negative margin cannot pull the header up; and padding the header cells only moves the gap inside the sticky band rather than removing it.
+- Every header cell carries the same right gutter as its body cells. Without it a right-aligned column sits flush against the next left-aligned one, and "Latency" / "Flags" ran together as one word. Latency takes a wider gutter because its values are right-aligned against chips that start immediately after.
+- Column widths are explicit shares under `table-layout: fixed` — Time 14%, Service 18%, Agent 12%, Status 8%, Latency 12%, Flags 33%, caret 3% — so the table fills its panel and the columns stay put as content changes. Giving one column the leftover width instead collapsed the others to their minimum and bunched them against the left edge. A service or agent name longer than its share truncates with an ellipsis and keeps the full value in its `title` and in the row detail.
+- The rejected-rows table keeps auto layout, because a raw row is long free text that should wrap and use whatever room is left; only Line (10%) and Reason (22%) are pinned.
 - Time column shows `14 Apr, 12:00`; year shown only when the dataset spans years.
 - Flags render as pill chips (`--r-chip`, 1px `--rule`, `--t-xs`) with human labels:
 
@@ -369,12 +377,19 @@ Columns: Service · Availability · Nines · Downtime · Error budget used · In
 | `merged_duplicate` | merged | Another row reported the same check; combined into this one |
 | `status_conflict_same_agent` | conflicting status | Duplicate rows disagreed; the failure was kept |
 
-- Row expand (chevron button at row end): raw timestamp, source line ("Line 3,812 in the file"), region, and the flag explanations.
+- Row expand: raw timestamp, source line ("Line 3,812 in the file"), region, and the flag explanations. **The whole row is the target** — the chevron is a 40px hit area inside a row the pointer is already on, so clicking anywhere toggles it. The chevron button stays for keyboard and screen-reader users and stops its own click from bubbling, or the toggle would fire twice and cancel out.
+- A row with no flags shows an em dash in `--shale`, the same placeholder the latency and region columns use for a missing value. An empty cell reads as something failing to render; a dash says there is nothing to report. The mobile card omits the row entirely instead, because a lone dash in a stacked layout is noise rather than structure.
+- The open row tints `--fog`, and unopened rows tint on hover, so the target is legible before the click.
+- The detail animates in over 160 ms (`.row-detail`, DESIGN §3.4): it fades and slides down 4px. Height is not animated because a `<tr>` ignores it; the inner wrapper moves instead. Reduced motion makes it instant via the global override.
 - Rejected view columns: Line, Reason (human text), Raw row (wrapped, `--t-sm`, `--shale`, `word-break: break-all`).
 - Footer: one page at a time — "1–20 of 15,551" and a records-per-page select (10/20/50/100, default 20) on the left; Previous, numbered page buttons and Next on the right, above a `--rule` top border. Rows accumulated across pages would put thousands of nodes in the DOM and bury the pager below them, so only the current page is rendered.
-- Page numbers: first and last always shown, a one-page window around the current page, `…` for the gaps. A gap that would hide exactly one page shows that page instead, since the ellipsis costs the same width. The control keeps a steady width so the buttons do not move under the pointer while paging.
+- Page numbers: first and last always shown, a window around the current page, `…` for the gaps. A gap that would hide exactly one page shows that page instead, since the ellipsis costs the same width. The control keeps a steady width so the buttons do not move under the pointer while paging.
+- The arrows are 36px icon buttons either side of the numbers and the group never wraps — letting Next drop onto its own line put the two arrows on opposite sides of the control. Under 640px the window narrows from ±1 page to the current page alone, which is what keeps the group on one line; the count and the per-page select sit on a row above.
 - Changing the page size returns to page 1, because "page 3" means a different set of rows at a different size.
-- Changing page: the buttons disable while the request is in flight and the page already on screen stays put, so the table never collapses to a skeleton mid-read. A polite `aria-live` region announces the new page.
+- Changing page: the buttons disable while the request is in flight, and the rows already on screen stay put at 60% opacity rather than vanishing — a skeleton on every click read as a reload, no signal at all read as nothing happening. The pager itself never dims, so it stays usable. A polite `aria-live` region announces the new page.
+- Changing a filter is different: those rows describe a different question, and `outcome=rejected` returns a different row shape entirely. The table shows the skeleton until the matching rows arrive rather than holding the previous filter's rows.
+- The skeleton claims the height of a full page of rows, so applying a filter does not collapse the panel and jerk the page up under the reader.
+- Filtering down while on a deep page clamps to the last page that still has rows, rather than showing an empty table with no way back.
 - An expanded row detail closes on a page change, because the row it belonged to is gone.
 
 ### 6.9 Buttons and fields

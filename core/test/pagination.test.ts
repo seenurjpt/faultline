@@ -165,6 +165,41 @@ describe("jumping to a page", () => {
   });
 });
 
+describe("clamping past the end", () => {
+  // Narrowing a filter while on a deep page leaves the position past the end
+  // of the new result. The hook clamps to the last real page; these pin the
+  // arithmetic it relies on.
+  const clamp = (pos: PagePosition, key: string, pageCount: number) =>
+    pos.index >= pageCount && pos.index > 0
+      ? jumpTo(pos, key, pageCount - 1)
+      : pos;
+
+  it("lands on the last page when the result shrinks", () => {
+    const deep = jumpTo(firstPage(KEY), KEY, 699);
+    const clamped = clamp(deep, KEY, 3);
+    expect(clamped.index).toBe(2);
+    expect(clamped.jumped).toBe(true);
+  });
+
+  it("lands on page 1 when only one page is left", () => {
+    const deep = jumpTo(firstPage(KEY), KEY, 699);
+    const clamped = clamp(deep, KEY, 1);
+    expect(clamped.index).toBe(0);
+    expect(clamped.jumped).toBe(false);
+    expect(clamped.trail).toEqual([null]);
+  });
+
+  it("leaves a position that is already in range alone", () => {
+    const p = jumpTo(firstPage(KEY), KEY, 5);
+    expect(clamp(p, KEY, 156)).toBe(p);
+  });
+
+  it("does not fire on an empty result, which has one page", () => {
+    const p = firstPage(KEY);
+    expect(clamp(p, KEY, 1)).toBe(p);
+  });
+});
+
 describe("page number items", () => {
   it("lists every page when they all fit", () => {
     expect(pageItems(1, 5)).toEqual([1, 2, 3, 4, 5]);

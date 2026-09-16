@@ -16,6 +16,13 @@ import {
 import { Button, Chip, Skeleton, cx } from "../ui/primitives";
 
 function FlagChips({ flags }: { flags: string[] }) {
+  if (flags.length === 0) {
+    return (
+      <span className="text-[var(--shale)]" aria-label="No notes">
+        —
+      </span>
+    );
+  }
   return (
     <span className="flex flex-wrap gap-1">
       {flags.map((flag) => (
@@ -83,45 +90,93 @@ function LogsTableRows({
 }: LogsTableProps) {
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  if (loading) return <TableSkeleton />;
+  if (loading) return <TableSkeleton rows={pageSize} />;
 
   if (rows.length === 0) {
+    // An empty page with records behind it means the user is past the end —
+    // filtering down while on a deep page does that. Offering only "clear
+    // filters" would strand them, so the way back to page 1 is offered too.
+    const strandedPastEnd = total > 0 && page > 1;
     return (
       <div className="flex flex-col items-start gap-3 py-8">
-        <p className="text-[15px] leading-[22px]">{emptyMessage}</p>
-        <Button kind="secondary" onClick={onClearFilters}>
-          Clear filters
-        </Button>
+        <p className="text-[15px] leading-[22px]">
+          {strandedPastEnd
+            ? `Page ${formatNumber(page)} is past the end of these ${formatNumber(total)} records.`
+            : emptyMessage}
+        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          {strandedPastEnd ? (
+            <Button kind="secondary" onClick={() => onGoToPage(1)}>
+              Back to page 1
+            </Button>
+          ) : (
+            <Button kind="secondary" onClick={onClearFilters}>
+              Clear filters
+            </Button>
+          )}
+        </div>
       </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-4">
+      {/* While a page is in flight the rows already on screen stay put and
+          dim slightly, rather than vanishing. Replacing them with a skeleton
+          on every click made paging feel like a reload; leaving them with no
+          signal at all made it feel like nothing had happened. */}
+      <div
+        className={cx(
+          "flex flex-col gap-4 transition-opacity duration-150",
+          paging && "pointer-events-none opacity-60",
+        )}
+        aria-busy={paging}
+      >
       {/* Desktop: the full table. */}
-      <div className="hidden overflow-x-auto sm:block">
-        <table className="w-full border-collapse text-[13px] leading-[18px]">
-          <thead className="sticky top-[var(--top-bar-h,0px)] z-10 bg-[var(--paper)]">
+      <div className="hidden sm:block">
+        <table className="w-full table-fixed border-collapse text-[13px] leading-[18px]">
+          <thead className="sticky top-[var(--top-bar-h,0px)] z-20 bg-[var(--paper)]">
             <tr className="border-b border-[var(--rule)]">
-              <th scope="col" className="py-2 text-left font-medium text-[var(--shale)]">
+              <th
+                scope="col"
+                className="w-[14%] py-2 pl-2 pr-3 text-left font-medium text-[var(--shale)] whitespace-nowrap"
+              >
                 Time ({tz === "ist" ? "IST" : "UTC"})
               </th>
-              <th scope="col" className="py-2 text-left font-medium text-[var(--shale)]">
+              <th
+                scope="col"
+                className="w-[18%] py-2 pr-3 text-left font-medium text-[var(--shale)] whitespace-nowrap"
+              >
                 Service
               </th>
-              <th scope="col" className="py-2 text-left font-medium text-[var(--shale)]">
+              <th
+                scope="col"
+                className="w-[12%] py-2 pr-3 text-left font-medium text-[var(--shale)] whitespace-nowrap"
+              >
                 Agent
               </th>
-              <th scope="col" className="py-2 text-right font-medium text-[var(--shale)]">
+              <th
+                scope="col"
+                className="w-[8%] py-2 pr-3 text-right font-medium text-[var(--shale)]"
+              >
                 Status
               </th>
-              <th scope="col" className="py-2 text-right font-medium text-[var(--shale)]">
+              <th
+                scope="col"
+                className="w-[12%] py-2 pr-6 text-right font-medium text-[var(--shale)]"
+              >
                 Latency
               </th>
-              <th scope="col" className="py-2 text-left font-medium text-[var(--shale)]">
+              {/* Flags takes whatever is left once the fixed columns have
+                  what they need, so chips wrap inside this column rather
+                  than squeezing the service and agent names. */}
+              <th
+                scope="col"
+                className="w-[33%] py-2 pr-3 text-left font-medium text-[var(--shale)]"
+              >
                 Flags
               </th>
-              <th scope="col" className="w-10 py-2">
+              <th scope="col" className="w-[3%] py-2">
                 <span className="sr-only-table">Details</span>
               </th>
             </tr>
@@ -133,18 +188,38 @@ function LogsTableRows({
               const down = row.outcome === "down";
               return (
                 <Fragment key={key}>
-                  <tr className="border-b border-[var(--rule)]">
+                  <tr
+                    onClick={() => setExpanded(open ? null : key)}
+                    className={cx(
+                      "cursor-pointer border-b border-[var(--rule)] transition-colors",
+                      open ? "bg-[var(--fog)]" : "hover:bg-[var(--fog)]",
+                    )}
+                  >
                     <td
                       className={cx(
-                        "py-2 pr-3 tnum whitespace-nowrap",
+                        "py-2 pr-3 pl-2 tnum whitespace-nowrap",
                         // DESIGN §6.8: down rows carry a 3px fault left rule.
-                        down && "border-l-[3px] border-[var(--fault)] pl-2",
+                        // Drawn as an inset shadow rather than a border: in a
+                        // border-collapse table, adjacent rows' left borders
+                        // merge into one continuous bar detached from the rows.
+                        down &&
+                          "shadow-[inset_3px_0_0_0_var(--fault)]",
                       )}
                     >
                       {formatRowTime(row.checkedAt, tz, withYear)}
                     </td>
-                    <td className="py-2 pr-3">{row.serviceName}</td>
-                    <td className="py-2 pr-3 text-[var(--shale)]">{row.agent}</td>
+                    <td
+                      className="truncate py-2 pr-3"
+                      title={row.serviceName}
+                    >
+                      {row.serviceName}
+                    </td>
+                    <td
+                      className="truncate py-2 pr-3 text-[var(--shale)]"
+                      title={row.agent}
+                    >
+                      {row.agent}
+                    </td>
                     <td
                       className={cx(
                         "py-2 pr-3 text-right tnum",
@@ -155,7 +230,7 @@ function LogsTableRows({
                     </td>
                     <td
                       className={cx(
-                        "py-2 pr-3 text-right tnum whitespace-nowrap",
+                        "py-2 pr-6 text-right tnum whitespace-nowrap",
                         row.slow && "text-[var(--ochre-ink)]",
                       )}
                     >
@@ -169,7 +244,12 @@ function LogsTableRows({
                     <td className="py-2">
                       <button
                         type="button"
-                        onClick={() => setExpanded(open ? null : key)}
+                        onClick={(e) => {
+                          // The row already handles this; without stopping
+                          // here the toggle would fire twice and cancel out.
+                          e.stopPropagation();
+                          setExpanded(open ? null : key);
+                        }}
                         aria-expanded={open}
                         aria-label={`Details for ${row.serviceName} at ${formatRowTime(row.checkedAt, tz, withYear)}`}
                         className="inline-flex h-10 w-10 items-center justify-center text-[var(--shale)] hover:text-[var(--basalt)]"
@@ -187,8 +267,10 @@ function LogsTableRows({
                   </tr>
                   {open && (
                     <tr className="border-b border-[var(--rule)] bg-[var(--fog)]">
-                      <td colSpan={7} className="px-2 py-3">
-                        <RowDetail row={row} />
+                      <td colSpan={7} className="overflow-hidden px-2 py-3">
+                        <div className="row-detail">
+                          <RowDetail row={row} />
+                        </div>
                       </td>
                     </tr>
                   )}
@@ -208,9 +290,11 @@ function LogsTableRows({
           return (
             <li
               key={key}
+              onClick={() => setExpanded(open ? null : key)}
               className={cx(
-                "border-b border-[var(--rule)] py-3 pl-2",
-                down && "border-l-[3px] border-l-[var(--fault)]",
+                "cursor-pointer border-b border-[var(--rule)] py-3 pl-3 transition-colors",
+                open && "bg-[var(--fog)]",
+                down && "shadow-[inset_3px_0_0_0_var(--fault)]",
               )}
             >
               <div className="flex items-baseline justify-between gap-3">
@@ -243,7 +327,11 @@ function LogsTableRows({
               )}
               <button
                 type="button"
-                onClick={() => setExpanded(open ? null : key)}
+                onClick={(e) => {
+                  // The card already handles this; see the desktop row.
+                  e.stopPropagation();
+                  setExpanded(open ? null : key);
+                }}
                 aria-expanded={open}
                 className="mt-1 inline-flex min-h-10 items-center gap-1 text-[13px] leading-[18px] text-[var(--tide)]"
               >
@@ -255,7 +343,7 @@ function LogsTableRows({
                 />
               </button>
               {open && (
-                <div className="mt-2">
+                <div className="row-detail mt-2">
                   <RowDetail row={row} />
                 </div>
               )}
@@ -263,6 +351,7 @@ function LogsTableRows({
           );
         })}
       </ul>
+      </div>
 
       <Pager
         rangeStart={firstRowNumber}
@@ -318,74 +407,96 @@ function Pager({
   onNext: () => void;
   busy: boolean;
 }) {
-  const items = pageItems(page, pageCount);
+  // A narrow screen fits far fewer numbers than a wide one, so it gets a
+  // tighter window. Both lists are built the same way, and the wide one is
+  // simply hidden below `sm` rather than measured at runtime.
+  const narrowItems = pageItems(page, pageCount, 0);
+  const wideItems = pageItems(page, pageCount, 1);
+
+  const numberClass = (active: boolean) =>
+    cx(
+      "inline-flex h-9 min-w-9 shrink-0 items-center justify-center rounded-[var(--radius-field)] px-1.5",
+      "text-[13px] leading-[18px] tnum transition-colors",
+      "disabled:opacity-50 disabled:pointer-events-none",
+      active
+        ? "bg-[var(--tide)] font-medium text-[var(--paper)]"
+        : "text-[var(--shale)] hover:bg-[var(--fog)] hover:text-[var(--basalt)]",
+    );
+
+  const arrowClass =
+    "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-field)] " +
+    "border border-[var(--rule)] text-[var(--shale)] transition-colors " +
+    "hover:border-[var(--shale)] hover:text-[var(--basalt)] " +
+    "disabled:opacity-40 disabled:pointer-events-none";
+
+  const numbers = (items: (number | null)[]) =>
+    items.map((item, i) =>
+      item === null ? (
+        <span
+          key={`gap-${i}`}
+          aria-hidden="true"
+          className="shrink-0 px-0.5 text-[13px] leading-[18px] text-[var(--shale)]"
+        >
+          …
+        </span>
+      ) : (
+        <button
+          key={item}
+          type="button"
+          onClick={() => onGoToPage(item)}
+          disabled={busy}
+          aria-label={`Page ${item}`}
+          aria-current={item === page ? "page" : undefined}
+          className={numberClass(item === page)}
+        >
+          {item}
+        </button>
+      ),
+    );
 
   return (
     <nav
       aria-label="Check record pages"
-      className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 border-t border-[var(--rule)] pt-4"
+      className="flex flex-col gap-3 border-t border-[var(--rule)] pt-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
     >
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <p className="text-[13px] leading-[18px] text-[var(--shale)] tnum">
+      {/* Count and page size read as one sentence and stay on one line. */}
+      <div className="flex min-w-0 items-center gap-3">
+        <p className="shrink-0 text-[13px] leading-[18px] text-[var(--shale)] tnum">
           {formatNumber(rangeStart)}–{formatNumber(rangeEnd)} of{" "}
           {formatNumber(total)}
         </p>
         <PageSizeSelect value={pageSize} onChange={onPageSize} disabled={busy} />
       </div>
 
-      <div className="flex flex-wrap items-center gap-1">
-        <Button
-          kind="secondary"
+      {/* Never wraps: Next dropping onto its own line put the two arrows on
+          opposite sides of the control. */}
+      <div className="flex shrink-0 items-center gap-1">
+        <button
+          type="button"
           onClick={onPrev}
           disabled={!hasPrev || busy}
           aria-label="Previous page"
-          className="px-2"
+          className={arrowClass}
         >
           <CaretLeft size={13} weight="bold" />
-          <span className="hidden sm:inline">Previous</span>
-        </Button>
+        </button>
 
-        {items.map((item, i) =>
-          item === null ? (
-            <span
-              key={`gap-${i}`}
-              aria-hidden="true"
-              className="px-1 text-[13px] leading-[18px] text-[var(--shale)]"
-            >
-              …
-            </span>
-          ) : (
-            <button
-              key={item}
-              type="button"
-              onClick={() => onGoToPage(item)}
-              disabled={busy}
-              aria-label={`Page ${item}`}
-              aria-current={item === page ? "page" : undefined}
-              className={cx(
-                "inline-flex h-10 min-w-10 items-center justify-center rounded-[var(--radius-field)] px-2",
-                "text-[13px] leading-[18px] tnum transition-colors",
-                "disabled:opacity-50 disabled:pointer-events-none",
-                item === page
-                  ? "bg-[var(--tide)] font-medium text-[var(--paper)]"
-                  : "text-[var(--shale)] hover:bg-[var(--fog)] hover:text-[var(--basalt)]",
-              )}
-            >
-              {item}
-            </button>
-          ),
-        )}
+        <div className="flex items-center gap-1 sm:hidden">
+          {numbers(narrowItems)}
+        </div>
+        <div className="hidden items-center gap-1 sm:flex">
+          {numbers(wideItems)}
+        </div>
 
-        <Button
-          kind="secondary"
+        <button
+          type="button"
           onClick={onNext}
           disabled={!hasNext || busy}
           aria-label="Next page"
-          className="px-2"
+          className={arrowClass}
         >
-          <span className="hidden sm:inline">Next</span>
           <CaretRight size={13} weight="bold" />
-        </Button>
+        </button>
       </div>
 
       {/* Screen readers get the page change announced; the visual cue is the
@@ -510,7 +621,7 @@ export function RejectedTable({
   onNext: () => void;
   paging: boolean;
 }) {
-  if (loading) return <TableSkeleton />;
+  if (loading) return <TableSkeleton rows={pageSize} />;
 
   if (rows.length === 0) {
     return (
@@ -522,17 +633,27 @@ export function RejectedTable({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="overflow-x-auto">
+      <div>
       <table className="w-full border-collapse text-[13px] leading-[18px]">
-        <thead className="sticky top-[var(--top-bar-h,0px)] z-10 bg-[var(--paper)]">
+        <thead className="sticky top-[var(--top-bar-h,0px)] z-20 bg-[var(--paper)]">
           <tr className="border-b border-[var(--rule)]">
-            <th scope="col" className="py-2 text-left font-medium text-[var(--shale)]">
+            <th
+              scope="col"
+              className="w-[10%] py-2 pr-3 text-left font-medium text-[var(--shale)] whitespace-nowrap"
+            >
               Line
             </th>
-            <th scope="col" className="py-2 text-left font-medium text-[var(--shale)]">
+            <th
+              scope="col"
+              className="w-[22%] py-2 pr-3 text-left font-medium text-[var(--shale)] whitespace-nowrap"
+            >
               Reason
             </th>
-            <th scope="col" className="py-2 text-left font-medium text-[var(--shale)]">
+            {/* Raw rows are long, so this column takes the leftover width. */}
+            <th
+              scope="col"
+              className="w-full py-2 text-left font-medium text-[var(--shale)]"
+            >
               Raw row
             </th>
           </tr>
@@ -574,10 +695,21 @@ export function RejectedTable({
   );
 }
 
-function TableSkeleton() {
+/**
+ * Stands in for the rows that are loading. It claims the height the real
+ * rows will take, so applying a filter does not collapse the panel and jerk
+ * the page up under the reader — `rows` is the page size, not a fixed 8.
+ */
+function TableSkeleton({ rows = 8 }: { rows?: number }) {
   return (
-    <div className="flex flex-col gap-3 py-2" aria-hidden="true">
-      {Array.from({ length: 8 }).map((_, i) => (
+    <div
+      className="flex flex-col gap-3 py-2"
+      aria-hidden="true"
+      // Very large pages would otherwise paint hundreds of shimmering bars,
+      // which is slower and noisier than the table it stands in for.
+      style={{ minHeight: `${Math.min(rows, 12) * 33}px` }}
+    >
+      {Array.from({ length: Math.min(rows, 12) }).map((_, i) => (
         <Skeleton key={i} className="h-3 w-full" />
       ))}
     </div>

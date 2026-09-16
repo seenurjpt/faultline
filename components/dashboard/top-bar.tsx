@@ -8,7 +8,12 @@ import { CaretDown, Check, Folders, UploadSimple } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import { FaultGlyph, cx } from "../ui/primitives";
 import { formatRange, middleTruncate } from "@/lib/format";
-import { useDashboardState, useViewState } from "@/lib/url-state";
+import {
+  clearedLogsFilters,
+  useDashboardState,
+  useLogsState,
+  useViewState,
+} from "@/lib/url-state";
 import type { DatasetSummary, Period } from "@/lib/types";
 
 const TRIGGER =
@@ -180,6 +185,23 @@ export function TopBar({
   // display-only, so it stays a shallow URL update.
   const [state, setState, isPending] = useDashboardState();
   const [view, setView] = useViewState();
+  const [, setFilters] = useLogsState();
+
+  // A filter is only meaningful against the data it was chosen for: another
+  // file may not contain that service or agent at all, and a specific day is
+  // almost certainly outside its range. Switching file or month therefore
+  // clears them rather than carrying over a filter that silently matches
+  // nothing. Both writes land in the same URL update, so this costs no extra
+  // navigation.
+  const changeDataset = (id: string) => {
+    setFilters(clearedLogsFilters());
+    setState({ dataset: id, period: "all" });
+  };
+
+  const changePeriod = (key: string) => {
+    setFilters(clearedLogsFilters());
+    setState({ period: key });
+  };
   // DESIGN §5.4: under 720px the dataset and period controls collapse.
   const [open, setOpen] = useState(false);
 
@@ -232,12 +254,12 @@ export function TopBar({
       <DatasetSelect
         datasets={datasets}
         value={datasetId}
-        onChange={(id) => setState({ dataset: id, period: "all" })}
+        onChange={changeDataset}
       />
       <PeriodSelect
         periods={periods}
         value={state.period}
-        onChange={(key) => setState({ period: key })}
+        onChange={changePeriod}
       />
       {/* Changing either control recomputes the overview on the server, which
           takes a moment on free-tier compute. Without this the click looks

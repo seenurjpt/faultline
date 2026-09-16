@@ -337,7 +337,7 @@ export function DashboardView({
 
           <Panel
             className={cx(
-              "mt-4 min-w-0 overflow-hidden px-4 pb-4 sm:px-6 sm:pb-6",
+              "mt-4 min-w-0 px-4 pb-4 sm:px-6 sm:pb-6",
               pulse && "attention-pulse",
             )}
           >

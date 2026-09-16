@@ -672,6 +672,7 @@ Dataset switcher (completed uploads), period switcher (from `periods`), time zon
 ### 13.3 Logs section
 - Filter bar: date mode (One day / Date range), date input(s) limited to the dataset range, services multi-select, outcome, agent.
 - Changing any filter resets the cursor.
+- Changing the dataset or the period clears the logs filters. A service or agent may not exist in the other file at all, and a chosen day is almost certainly outside its range, so carrying them over would silently show an empty table. The timezone toggle is a display preference, not a filter, and survives. Both writes land in one URL update.
 - Table columns: time, service, agent, status, latency, flags. Row expands to show raw timestamp, source line, region and a plain explanation of each flag.
 - Paging: 10/20/50/100 rows a page (default 20), with the row range, total count, Previous/Next and numbered page buttons. Only the current page is in the DOM.
 - Stepping uses the keyset cursor: it points forward only, so the client keeps the cursor that produced each page it has visited and re-uses it to go back. Changing any filter or the page size discards that trail.
