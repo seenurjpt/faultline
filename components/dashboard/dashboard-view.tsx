@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import * as Collapsible from "@radix-ui/react-collapsible";
 import { CaretDown } from "@phosphor-icons/react";
 import type {
@@ -20,6 +21,7 @@ import { DataReceipt } from "./data-receipt";
 import { FilterBar, type FilterState } from "./filter-bar";
 import { LogsTable, RejectedTable } from "./logs-table";
 import { UploadModal } from "../upload/upload-modal";
+import { ManageDatasetsModal } from "./manage-datasets-modal";
 import { useDashboardState, useLogsState } from "@/lib/url-state";
 import { useLogs } from "@/lib/use-logs";
 import { formatDate, formatNumber, parseUtcDayKey } from "@/lib/format";
@@ -38,7 +40,9 @@ export function DashboardView({
   const [highlight, setHighlight] = useState<string | null>(null);
   const [pulse, setPulse] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
   const logsRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
   const isWholeFile = overview.period.key === "all";
   const { headline, period, quality } = overview;
@@ -173,15 +177,43 @@ export function DashboardView({
 
   const isRejectedView = filters.outcome === "rejected";
 
+  // After a delete the server component has to re-run, because the dataset
+  // list, the overview and the logs all came from it. Deleting the dataset on
+  // screen also has to move the URL off that id: refresh() alone would
+  // re-render the same now-missing id and fall through to "couldn't be
+  // loaded". push() goes to the newest survivor (or the bare dashboard, which
+  // shows the empty state) and refresh() re-runs the server component for it.
+  const handleDeleted = useCallback(
+    (deletedId: string, remaining: DatasetSummary[]) => {
+      const wasOnScreen = deletedId === overview.dataset.id;
+      if (wasOnScreen) {
+        setManageOpen(false);
+        const next = remaining[0];
+        router.push(next ? `/?dataset=${next.id}` : "/");
+      }
+      router.refresh();
+    },
+    [overview.dataset.id, router],
+  );
+
   return (
     <>
       <TopBar
         datasets={datasets}
         periods={overview.periods}
         onUploadClick={() => setUploadOpen(true)}
+        onManageClick={() => setManageOpen(true)}
       />
 
       <UploadModal open={uploadOpen} onOpenChange={setUploadOpen} />
+
+      <ManageDatasetsModal
+        open={manageOpen}
+        onOpenChange={setManageOpen}
+        datasets={datasets}
+        currentId={overview.dataset.id}
+        onDeleted={handleDeleted}
+      />
 
       <main className="mx-auto w-full min-w-0 max-w-[1360px] flex-1 overflow-x-clip px-4 pb-16 sm:px-8">
         <Collapsible.Root

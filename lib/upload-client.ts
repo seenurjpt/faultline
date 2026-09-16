@@ -180,6 +180,20 @@ const sleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
+ * `fetch` rejects with a DOMException named "AbortError" when its signal
+ * fires. That is a cancellation, not a failure to reach the processor, and
+ * telling the two apart is what keeps a closed modal (or React's
+ * mount/unmount/remount in development) from being reported as the processor
+ * being down.
+ */
+function isAbort(error: unknown): boolean {
+  return (
+    error instanceof DOMException &&
+    (error.name === "AbortError" || error.code === DOMException.ABORT_ERR)
+  );
+}
+
+/**
  * Sends one request, retrying only what is safe to retry. Chunks are
  * idempotent (SPEC §10.1), so a retry can never double-count.
  */
@@ -205,6 +219,11 @@ async function sendWithRetry(
       if (error instanceof UploadError) {
         if (!error.retryable) throw error;
         lastError = error;
+      } else if (isAbort(error) || signal?.aborted) {
+        // A cancelled request is not a network failure, and retrying it would
+        // just abort again. It has to keep the "aborted" code so the caller
+        // can stay silent rather than reporting the processor as unreachable.
+        throw new UploadError("aborted", "Upload cancelled.");
       } else {
         // Network failure: the request never reached the processor.
         lastError = new UploadError(
@@ -257,7 +276,12 @@ export async function uploadFile(
       header: pre.header,
       force: options.force ?? false,
     }),
-  }).catch(() => {
+  }).catch((error: unknown) => {
+    // Same distinction as sendWithRetry: a cancelled create is not the
+    // processor being unreachable.
+    if (isAbort(error) || options.signal?.aborted) {
+      throw new UploadError("aborted", "Upload cancelled.");
+    }
     throw new UploadError(
       "network_error",
       "Couldn't reach the processor, so nothing was stored. Try again.",

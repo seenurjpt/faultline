@@ -316,3 +316,25 @@ export async function getRejectedRows(
     nextId: list.length === limit ? (list[list.length - 1]?.id ?? null) : null,
   };
 }
+
+/**
+ * Deletes one upload and everything derived from it. `checks`,
+ * `upload_chunks` and `rejected_rows` all reference `uploads(id)` with
+ * `on delete cascade` (001_init.sql), so this one statement clears them too.
+ *
+ * `services` is deliberately left alone: it has no `upload_id` and is shared
+ * across uploads, and getServices() only returns services that still have
+ * checks, so a row left behind is invisible and gets reused on the next
+ * upload rather than duplicated.
+ *
+ * Returns the filename when a row was deleted, or null when the id matched
+ * nothing — which lets the caller answer 404 instead of a silent success.
+ */
+export async function deleteDataset(id: string): Promise<string | null> {
+  const rows = (await db()`
+    delete from uploads
+    where id = ${id}::uuid
+    returning filename
+  `) as { filename: string }[];
+  return rows[0]?.filename ?? null;
+}

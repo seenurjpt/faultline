@@ -169,10 +169,12 @@ export function TopBar({
   datasets,
   periods,
   onUploadClick,
+  onManageClick,
 }: {
   datasets: DatasetSummary[];
   periods: Period[];
   onUploadClick: () => void;
+  onManageClick: () => void;
 }) {
   const [state, setState] = useDashboardState();
   // DESIGN §5.4: under 720px the dataset and period controls collapse.
@@ -217,6 +219,13 @@ export function TopBar({
                 value={state.tz}
                 onChange={(tz) => setState({ tz })}
               />
+              <button
+                type="button"
+                onClick={onManageClick}
+                className="inline-flex min-h-10 items-center rounded-[var(--radius-field)] px-3 text-[15px] leading-[22px] text-[var(--shale)] hover:text-[var(--basalt)]"
+              >
+                Manage files
+              </button>
               <button
                 type="button"
                 onClick={onUploadClick}

@@ -47,9 +47,23 @@ export function useUpload(): UploadController {
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  // Cancel any upload still in flight when the screen goes away.
+  // Cancel any upload still in flight when the screen goes away for good.
+  //
+  // React mounts, unmounts and remounts every component once in development,
+  // so a bare abort() here fired mid-upload and the chunk in flight came back
+  // as "Couldn't reach the processor". The abort is deferred to a microtask
+  // and skipped if the hook has been remounted by then, which is exactly what
+  // separates the development remount from a real unmount. Closing the modal
+  // cancels through reset(), so nothing depends on this path.
+  const mountedRef = useRef(true);
   useEffect(() => {
-    return () => abortRef.current?.abort();
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      queueMicrotask(() => {
+        if (!mountedRef.current) abortRef.current?.abort();
+      });
+    };
   }, []);
 
   const choose = useCallback((file: File) => {

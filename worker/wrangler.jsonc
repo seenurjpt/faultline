@@ -7,8 +7,10 @@
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
   "vars": {
-    // Replace the Vercel URL after the first web deploy, then redeploy.
-    "ALLOWED_ORIGINS": "http://localhost:3000"
+    // Comma-separated exact origins. A browser sends Origin without a
+    // trailing slash, and corsHeaders() compares the header verbatim, so
+    // these must not have one either. localhost stays for local dev.
+    "ALLOWED_ORIGINS": "http://localhost:3000,https://faultline-orcin.vercel.app"
   }
   // DATABASE_URL is a secret: wrangler secret put DATABASE_URL
 }
