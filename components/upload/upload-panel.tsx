@@ -30,9 +30,11 @@ export function UploadPanel({
     <div
       className={cx(
         "rounded-[var(--radius-panel)] border bg-[var(--paper)] p-6",
-        // The tray fills the dialog's fixed body rather than leaving dead
-        // space beneath it, which also makes the whole panel a drop target.
-        "flex min-h-full flex-col",
+        // The panel fills the dialog's fixed body rather than leaving dead
+        // space beneath it, which also makes the whole of it a drop target.
+        // Every stage is centred in that space, so the box does not look
+        // top-heavy with a block of emptiness underneath.
+        "flex min-h-full flex-col items-center justify-center",
         dragging ? "border-[var(--tide)]" : "border-[var(--rule)]",
         stage.kind === "empty" && "border-dashed",
       )}
@@ -145,7 +147,7 @@ function PreflightCard({
   onReset: () => void;
 }) {
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex w-full flex-col items-center gap-4 text-center">
       <p className="text-[19px] leading-[26px] [word-break:break-all]">
         {pre.file.name}
       </p>
@@ -174,7 +176,7 @@ function BatchTrack({
   const total = stage.batches.length;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex w-full flex-col items-center gap-4 text-center">
       {/* Batches travel several at a time, so the heading counts what has
           landed rather than pointing at "the" current one. */}
       <p className="text-[19px] leading-[26px] tnum">
@@ -184,7 +186,9 @@ function BatchTrack({
         )}
       </p>
 
-      <ol className="flex flex-wrap gap-1">
+      {/* Full width so the segments still span the panel and read as a
+          sequential track rather than shrinking to their own content. */}
+      <ol className="flex w-full flex-wrap gap-1">
         {stage.batches.map((state, i) => (
           <li
             key={i}
@@ -262,7 +266,7 @@ function DuplicatePrompt({
 }) {
   const when = completedAt ? formatDate(completedAt) : "an earlier date";
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex w-full flex-col items-center gap-4 text-center">
       <p className="text-[15px] leading-[22px]">
         This file was already processed on {when}.
       </p>
@@ -293,11 +297,13 @@ function ReceiptCard({
   const seconds = issues.latency_unit_seconds ?? 0;
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex w-full flex-col items-center gap-3 text-center">
       <p className="text-[19px] leading-[26px] tnum">
         Processed {formatNumber(summary.rows)} rows
       </p>
-      <ul className="flex flex-col gap-1 text-[15px] leading-[22px] tnum">
+      {/* The figures are a list to read down, so they stay left-aligned
+          inside the centred block rather than each line being centred. */}
+      <ul className="flex flex-col gap-1 text-left text-[15px] leading-[22px] tnum">
         <li>{formatNumber(summary.stored)} checks stored</li>
         <li>
           {formatNumber(summary.merged)}{" "}
