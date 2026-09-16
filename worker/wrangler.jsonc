@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "faultline-processor",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-09-01",
+  // The Neon HTTP driver needs Node compatibility for its internals.
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "vars": {
+    // Replace the Vercel URL after the first web deploy, then redeploy.
+    "ALLOWED_ORIGINS": "http://localhost:3000"
+  }
+  // DATABASE_URL is a secret: wrangler secret put DATABASE_URL
+}
