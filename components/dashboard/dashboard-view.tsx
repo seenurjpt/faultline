@@ -22,7 +22,11 @@ import { FilterBar, type FilterState } from "./filter-bar";
 import { LogsTable, RejectedTable } from "./logs-table";
 import { UploadModal } from "../upload/upload-modal";
 import { ManageDatasetsModal } from "./manage-datasets-modal";
-import { useLogsState, useViewState } from "@/lib/url-state";
+import {
+  clearedLogsFilters,
+  useLogsState,
+  useViewState,
+} from "@/lib/url-state";
 import { useLogs } from "@/lib/use-logs";
 import { formatDate, formatNumber, parseUtcDayKey } from "@/lib/format";
 
@@ -326,13 +330,16 @@ export function DashboardView({
             rangeEnd={overview.dataset.rangeEnd}
             totalLabel={
               isRejectedView
-                ? `${formatNumber(logsTotal)} rejected rows`
-                : `${formatNumber(logsTotal)} records`
+                ? `${formatNumber(logsTotal)} rejected ${logsTotal === 1 ? "row" : "rows"}`
+                : `${formatNumber(logsTotal)} ${logsTotal === 1 ? "record" : "records"}`
             }
           />
 
           <Panel
-            className={cx("mt-4 min-w-0 p-4 sm:p-6", pulse && "attention-pulse")}
+            className={cx(
+              "mt-4 min-w-0 overflow-hidden px-4 pb-4 sm:px-6 sm:pb-6",
+              pulse && "attention-pulse",
+            )}
           >
             {logsQuery.isError ? (
               <InlineError
@@ -378,16 +385,7 @@ export function DashboardView({
                 onPrev={logsQuery.goPrev}
                 onNext={logsQuery.goNext}
                 paging={logsQuery.isFetching}
-                onClearFilters={() =>
-                  setFilters({
-                    date: null,
-                    from: null,
-                    to: null,
-                    services: [],
-                    outcome: "all",
-                    agent: null,
-                  })
-                }
+                onClearFilters={() => setFilters(clearedLogsFilters())}
                 emptyMessage={emptyMessage}
               />
             )}

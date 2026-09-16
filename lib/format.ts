@@ -155,11 +155,77 @@ export const REJECTION_REASONS: Record<string, string> = {
   malformed_row: "Row has too few columns",
 };
 
-// DESIGN §6.6: receipt figures link to a logs outcome filter.
-export const ISSUE_LABELS: Record<string, (n: number) => string> = {
-  ts_epoch_converted: (n) => `${formatNumber(n)} epoch timestamps converted`,
-  ts_offset_converted: (n) => `${formatNumber(n)} IST timestamps converted`,
-  latency_unit_seconds: (n) => `${formatNumber(n)} latencies converted from seconds`,
-  latency_missing: (n) => `${formatNumber(n)} latencies missing or invalid`,
-  latency_negative_dropped: (n) => `${formatNumber(n)} negative latencies dropped`,
+/** "1 timestamp" / "233 timestamps", so a count of one never reads wrong. */
+function plural(n: number, one: string, many: string): string {
+  return `${formatNumber(n)} ${n === 1 ? one : many}`;
+}
+
+/**
+ * DESIGN §6.6: the receipt's cleanup lines, one per flag the cleaner can
+ * attach. Every flag in core/src/types.ts CheckFlag needs an entry — an
+ * unmapped one fell through to its raw code, so the panel read
+ * "4 merged_duplicate".
+ *
+ * `label` says what happened; `why` explains why it mattered, shown on demand.
+ */
+
+export const ISSUE_LABELS: Record<
+  string,
+  { label: (n: number) => string; why: string }
+> = {
+  ts_epoch_converted: {
+    label: (n) => `${plural(n, "epoch timestamp", "epoch timestamps")} converted`,
+    why: "These arrived as Unix seconds instead of a date. They were converted to UTC so they land in the right 15-minute slot.",
+  },
+  ts_offset_converted: {
+    label: (n) => `${plural(n, "IST timestamp", "IST timestamps")} converted`,
+    why: "These carried a +05:30 offset. Ignoring it would put the check five and a half hours from where it belongs, so they were converted to UTC.",
+  },
+  latency_unit_seconds: {
+    label: (n) => `${plural(n, "latency", "latencies")} converted from seconds`,
+    why: "One service reports latency in seconds rather than milliseconds. These were multiplied by 1,000 so every latency on the dashboard is comparable.",
+  },
+  latency_missing: {
+    label: (n) => `${plural(n, "latency", "latencies")} missing`,
+    why: "The latency column was blank. The check still counts toward availability; it is only left out of the latency figures.",
+  },
+  latency_unparseable: {
+    label: (n) => `${plural(n, "latency", "latencies")} unreadable`,
+    why: "The latency was not a number. The check still counts toward availability; the value is left out of the latency figures.",
+  },
+  latency_negative_dropped: {
+    label: (n) => `${plural(n, "negative latency", "negative latencies")} dropped`,
+    why: "A latency below zero is impossible, so the value was discarded. The check itself still counts toward availability.",
+  },
+  latency_unit_unknown: {
+    label: (n) => `${plural(n, "latency", "latencies")} with an unknown unit`,
+    why: "The unit column was neither ms nor s, which makes the number impossible to interpret, so it was left out of the latency figures.",
+  },
+  merged_duplicate: {
+    label: (n) => `${plural(n, "check", "checks")} absorbed a duplicate`,
+    why: "Another row reported the same service, time and agent. The rows were combined into one check, keeping the failure and the first latency that was present.",
+  },
+  status_conflict_same_agent: {
+    label: (n) => `${plural(n, "duplicate", "duplicates")} disagreed on status`,
+    why: "Two rows for the same check reported different status codes. The failure was kept, because wrongly hiding an outage costs a customer their credit.",
+  },
+  region_missing: {
+    label: (n) => `${plural(n, "check", "checks")} without a region`,
+    why: "The region column was blank. It is display-only, so nothing about availability changes.",
+  },
+  service_name_conflict: {
+    label: (n) => `${plural(n, "service name disagreement", "service name disagreements")}`,
+    why: "The same service id appeared under more than one name. The first name seen is used throughout.",
+  },
 };
+
+/** Falls back to a readable sentence rather than leaking a raw flag code. */
+export function issueLabel(flag: string, count: number): string {
+  const entry = ISSUE_LABELS[flag];
+  if (entry) return entry.label(count);
+  return `${formatNumber(count)} ${flag.replace(/_/g, " ")}`;
+}
+
+export function issueWhy(flag: string): string | null {
+  return ISSUE_LABELS[flag]?.why ?? null;
+}
