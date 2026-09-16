@@ -11,12 +11,15 @@ Total time: about 30 minutes.
 
 ```bash
 npm install
-npm test          # 52 unit tests pass, 12 golden tests skip until fixtures land
+npm test          # 78 tests, including the SPEC §12 golden values
 npm run typecheck
 ```
 
-Add the fixtures (see `fixtures/README.md`) and re-run `npm test` — the 12
-golden tests should then pass and assert every number in SPEC §12.
+The golden tests read the five CSVs in `fixtures/`. If that directory is
+empty they skip rather than pass silently; see `fixtures/README.md`.
+
+`npm run verify` prints the SPEC §12 tables from the code, including the
+incident-log comparison (8 of 8 logged incidents matched).
 
 ---
 
@@ -119,7 +122,8 @@ console, which is the allow-list doing its job.
 
 ## 5. Verify the live system — ~5 min
 
-1. Open `https://<your-vercel-url>/upload` and upload a fixture. Watch the
+1. Open `https://<your-vercel-url>/` and click "Upload file" in the top bar
+   (or "Upload a file" on the empty dashboard). Upload a fixture and watch the
    batch track advance and the receipt appear.
 2. Click **Open dashboard**. The ribbon, ledger, incidents and logs should
    all be populated.

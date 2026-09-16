@@ -1,5 +1,5 @@
-import Link from "next/link";
 import { DashboardView } from "@/components/dashboard/dashboard-view";
+import { UploadButton } from "@/components/upload/upload-button";
 import { FaultGlyph, InlineError } from "@/components/ui/primitives";
 import { isDbConfigured } from "@/lib/db";
 import { buildOverview } from "@/lib/overview";
@@ -100,12 +100,9 @@ function EmptyDashboard() {
           No datasets yet. Upload a monitoring CSV to see availability and
           incidents.
         </h1>
-        <Link
-          href="/upload"
-          className="mt-6 inline-flex min-h-10 items-center rounded-[var(--radius-field)] bg-[var(--tide)] px-4 text-[15px] leading-[22px] font-medium text-[var(--paper)]"
-        >
-          Upload a file
-        </Link>
+        <div className="mt-6">
+          <UploadButton />
+        </div>
       </main>
     </>
   );

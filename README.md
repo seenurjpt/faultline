@@ -14,7 +14,7 @@ line in the file.
 | What | URL |
 |---|---|
 | Dashboard | `https://<vercel-url>/` |
-| Upload | `https://<vercel-url>/upload` |
+| Upload | Modal on the dashboard — "Upload file" in the top bar |
 | Processor health | `https://faultline-processor.<sub>.workers.dev/v1/health` |
 
 **Last verified live:** _TODO_
@@ -26,7 +26,7 @@ line in the file.
 ```
  ┌──────────────────────────┐        PUT chunk (text/csv)       ┌─────────────────────────────┐
  │  Next.js app (Vercel)    │ ────────────────────────────────▶ │ Cloudflare Worker           │
- │  /upload  – upload UI    │ ◀──────── chunk report (JSON) ─── │ "processor"                 │
+ │  upload modal            │ ◀──────── chunk report (JSON) ─── │ "processor"                 │
  │  /        – dashboard    │                                   │ parse → validate → clean    │
  │  /api/*   – read API     │                                   │ → bulk upsert (1 txn/chunk) │
  └────────────┬─────────────┘                                   └──────────────┬──────────────┘

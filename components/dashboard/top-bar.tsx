@@ -168,9 +168,11 @@ function TzToggle({
 export function TopBar({
   datasets,
   periods,
+  onUploadClick,
 }: {
   datasets: DatasetSummary[];
   periods: Period[];
+  onUploadClick: () => void;
 }) {
   const [state, setState] = useDashboardState();
   // DESIGN §5.4: under 720px the dataset and period controls collapse.
@@ -215,12 +217,13 @@ export function TopBar({
                 value={state.tz}
                 onChange={(tz) => setState({ tz })}
               />
-              <Link
-                href="/upload"
+              <button
+                type="button"
+                onClick={onUploadClick}
                 className="inline-flex min-h-10 items-center rounded-[var(--radius-field)] border border-[var(--tide)] px-4 text-[15px] leading-[22px] font-medium text-[var(--tide)] hover:bg-[var(--fog)]"
               >
                 Upload file
-              </Link>
+              </button>
             </div>
           </div>
 

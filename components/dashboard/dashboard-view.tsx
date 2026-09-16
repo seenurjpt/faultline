@@ -19,6 +19,7 @@ import { IncidentsList } from "./incidents-list";
 import { DataReceipt } from "./data-receipt";
 import { FilterBar, type FilterState } from "./filter-bar";
 import { LogsTable, RejectedTable } from "./logs-table";
+import { UploadModal } from "../upload/upload-modal";
 import { useDashboardState, useLogsState } from "@/lib/url-state";
 import { useLogs } from "@/lib/use-logs";
 import { formatDate, formatNumber, parseUtcDayKey } from "@/lib/format";
@@ -36,6 +37,7 @@ export function DashboardView({
   const [filters, setFilters] = useLogsState();
   const [highlight, setHighlight] = useState<string | null>(null);
   const [pulse, setPulse] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
   const logsRef = useRef<HTMLDivElement>(null);
 
   const isWholeFile = overview.period.key === "all";
@@ -172,7 +174,13 @@ export function DashboardView({
 
   return (
     <>
-      <TopBar datasets={datasets} periods={overview.periods} />
+      <TopBar
+        datasets={datasets}
+        periods={overview.periods}
+        onUploadClick={() => setUploadOpen(true)}
+      />
+
+      <UploadModal open={uploadOpen} onOpenChange={setUploadOpen} />
 
       <main className="mx-auto w-full min-w-0 max-w-[1360px] flex-1 overflow-x-clip px-4 pb-16 sm:px-8">
         <Collapsible.Root
