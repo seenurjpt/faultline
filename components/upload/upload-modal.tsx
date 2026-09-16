@@ -38,8 +38,12 @@ export function UploadModal({
   const openDataset = useCallback(
     (datasetId: string) => {
       close();
+      // A freshly uploaded dataset is not in the server-rendered dataset list
+      // yet, so the page must re-fetch as well as navigate. push() carries the
+      // id in the URL and refresh() re-runs the server component for it;
+      // refresh() must come after, because calling it first cancels the
+      // pending navigation and the id never reaches the URL.
       router.push(`/?dataset=${datasetId}`);
-      // The dashboard is a server component, so the new dataset needs a fetch.
       router.refresh();
     },
     [close, router],

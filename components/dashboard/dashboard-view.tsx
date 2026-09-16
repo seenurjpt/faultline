@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import * as Collapsible from "@radix-ui/react-collapsible";
 import { CaretDown } from "@phosphor-icons/react";
 import type {
@@ -165,10 +165,11 @@ export function DashboardView({
     return map;
   }, [overview.ledger]);
 
-  // Make sure the dataset in the URL always matches what is rendered.
-  useEffect(() => {
-    if (!dash.dataset) setDash({ dataset: overview.dataset.id });
-  }, [dash.dataset, overview.dataset.id, setDash]);
+  // The URL deliberately does not get a `dataset` value written into it on
+  // load. The server already falls back to the newest dataset when the param
+  // is absent, and writing it here raced with navigation: opening a freshly
+  // uploaded dataset would be overwritten by the id of the page still on
+  // screen. The switcher sets it explicitly when the user picks one.
 
   const isRejectedView = filters.outcome === "rejected";
 
