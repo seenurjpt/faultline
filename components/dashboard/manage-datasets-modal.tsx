@@ -69,7 +69,7 @@ export function ManageDatasetsModal({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-[var(--basalt)]/40" />
+        <Dialog.Overlay className="modal-scrim fixed inset-0 z-50 bg-[var(--scrim)]" />
         <Dialog.Content
           onEscapeKeyDown={(e) => {
             if (busy) e.preventDefault();
@@ -78,8 +78,10 @@ export function ManageDatasetsModal({
             if (busy) e.preventDefault();
           }}
           className={cx(
-            "fixed left-1/2 top-1/2 z-50 w-[min(640px,calc(100vw-32px))]",
-            "max-h-[calc(100dvh-32px)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto",
+            // Centring lives in .modal-dialog's keyframes, not a Tailwind
+            // -translate-* class, so the two cannot fight.
+            "modal-dialog fixed left-1/2 top-1/2 z-50 w-[min(640px,calc(100vw-32px))]",
+            "max-h-[calc(100dvh-32px)] overflow-y-auto",
             "rounded-[var(--radius-panel)] border border-[var(--rule)] bg-[var(--fog)] p-6",
           )}
         >

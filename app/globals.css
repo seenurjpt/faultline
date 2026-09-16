@@ -14,6 +14,10 @@
   --ochre: #e4b64a;
   --calm: #afc0bb;
   --void: #9aa8aa;
+  /* Modal scrim. Not --basalt with alpha: in dark mode --basalt is a near
+     white, so that lightened the page behind the dialog instead of dimming
+     it. This is a fixed dark wash that reads the same in both themes. */
+  --scrim: rgb(14 24 26 / 0.45);
   color-scheme: light;
 }
 
@@ -32,6 +36,8 @@
     --ochre: #e4b64a;
     --calm: #3f5b59;
     --void: #51686a;
+    /* A dark page needs a deeper wash to separate the dialog from it. */
+    --scrim: rgb(5 12 13 / 0.62);
     color-scheme: dark;
   }
 }
@@ -49,6 +55,8 @@
   --ochre: #e4b64a;
   --calm: #3f5b59;
   --void: #51686a;
+  /* A dark page needs a deeper wash to separate the dialog from it. */
+  --scrim: rgb(5 12 13 / 0.62);
   color-scheme: dark;
 }
 
@@ -188,6 +196,86 @@
 
 .attention-pulse {
   animation: faultline-attention 700ms ease-out 1;
+}
+
+/* DESIGN §3.4 — logs row expand, 160 ms.
+   A table row cannot be animated with height (a <tr> ignores it), so the
+   detail cell's inner wrapper is what moves: it slides down from -4px and
+   fades in, with the row's own overflow hiding the offset. */
+@keyframes faultline-row-detail {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.row-detail {
+  animation: faultline-row-detail 160ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+/* DESIGN §3.4 — a modal is user-triggered motion, so it gets the same short
+   easing as the rest. The scrim fades; the dialog fades and rises 8px while
+   scaling up very slightly, which reads as arriving rather than appearing.
+   Radix sets data-state on both, and keeps them mounted for the exit. */
+@keyframes faultline-scrim-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes faultline-scrim-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes faultline-dialog-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 8px)) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes faultline-dialog-out {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 4px)) scale(0.99);
+  }
+}
+
+.modal-scrim[data-state="open"] {
+  animation: faultline-scrim-in 200ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.modal-scrim[data-state="closed"] {
+  animation: faultline-scrim-out 150ms ease-in both;
+}
+
+.modal-dialog[data-state="open"] {
+  animation: faultline-dialog-in 200ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.modal-dialog[data-state="closed"] {
+  animation: faultline-dialog-out 150ms ease-in both;
+}
+
+/* The dialog is centred by a transform, which the keyframes above also own.
+   Reduced motion cuts the animation to ~0ms, so the final transform has to
+   be declared here too or the dialog would sit off-centre. */
+@media (prefers-reduced-motion: reduce) {
+  .modal-dialog {
+    transform: translate(-50%, -50%) !important;
+  }
 }
 
 /* DESIGN §3.4 — reduced motion makes everything instant */
