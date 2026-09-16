@@ -1,69 +1,112 @@
-import Image from "next/image";
+import Link from "next/link";
+import { DashboardView } from "@/components/dashboard/dashboard-view";
+import { FaultGlyph, InlineError } from "@/components/ui/primitives";
+import { isDbConfigured } from "@/lib/db";
+import { buildOverview } from "@/lib/overview";
+import { getAgents, listDatasets } from "@/lib/queries";
 
-export default function Home() {
+// SPEC §5.3: the overview is server-rendered from the URL search params, so a
+// copied link reproduces the exact view.
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+export default async function DashboardPage(props: PageProps<"/">) {
+  const params = await props.searchParams;
+  const first = (value: string | string[] | undefined) =>
+    Array.isArray(value) ? value[0] : value;
+
+  if (!isDbConfigured()) {
+    return (
+      <Shell>
+        <InlineError message="The database isn't configured. Set DATABASE_URL and reload." />
+      </Shell>
+    );
+  }
+
+  let datasets;
+  try {
+    datasets = await listDatasets();
+  } catch (error: unknown) {
+    console.error("dashboard: listDatasets", error);
+    return (
+      <Shell>
+        <InlineError message="Couldn't reach the database, so no datasets could be listed." />
+      </Shell>
+    );
+  }
+
+  if (datasets.length === 0) return <EmptyDashboard />;
+
+  // SPEC §5.3: an unknown or missing dataset falls back to the newest one.
+  const requested = first(params.dataset);
+  const dataset =
+    datasets.find((d) => d.id === requested) ?? datasets[0];
+  const periodKey = first(params.period) ?? "all";
+
+  const [overview, agents] = await Promise.all([
+    buildOverview(dataset.id, periodKey),
+    getAgents(dataset.id),
+  ]);
+
+  if (!overview) {
+    return (
+      <Shell>
+        <InlineError message="That dataset couldn't be loaded." />
+      </Shell>
+    );
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <DashboardView
+      datasets={datasets}
+      overview={overview}
+      agents={agents}
+    />
+  );
+}
+
+function Shell({ children }: { children: React.ReactNode }) {
+  return (
+    <>
+      <header className="border-b border-[var(--rule)] bg-[var(--paper)]">
+        <div className="mx-auto flex min-h-14 max-w-[1360px] items-center px-4 sm:px-8">
+          <span className="flex items-center gap-2 font-display text-[19px] leading-[26px] font-semibold">
+            <FaultGlyph />
+            Faultline
+          </span>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+      </header>
+      <main className="mx-auto w-full max-w-[1360px] flex-1 px-4 py-16 sm:px-8">
+        {children}
       </main>
-    </div>
+    </>
+  );
+}
+
+// DESIGN §7: the empty dashboard points at the one thing worth doing.
+function EmptyDashboard() {
+  return (
+    <>
+      <header className="border-b border-[var(--rule)] bg-[var(--paper)]">
+        <div className="mx-auto flex min-h-14 max-w-[1360px] items-center px-4 sm:px-8">
+          <span className="flex items-center gap-2 font-display text-[19px] leading-[26px] font-semibold">
+            <FaultGlyph />
+            Faultline
+          </span>
+        </div>
+      </header>
+      <main className="mx-auto w-full max-w-[1360px] flex-1 px-4 py-16 sm:px-8">
+        <h1 className="max-w-[48ch] font-display text-[29px] leading-[36px] font-semibold">
+          No datasets yet. Upload a monitoring CSV to see availability and
+          incidents.
+        </h1>
+        <Link
+          href="/upload"
+          className="mt-6 inline-flex min-h-10 items-center rounded-[var(--radius-field)] bg-[var(--tide)] px-4 text-[15px] leading-[22px] font-medium text-[var(--paper)]"
+        >
+          Upload a file
+        </Link>
+      </main>
+    </>
   );
 }

@@ -1,26 +1,203 @@
 @import "tailwindcss";
 
+/* DESIGN §3.1 — light theme (default) */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --fog: #e8eeec;
+  --paper: #f6f8f7;
+  --basalt: #1e2b2e;
+  --shale: #5a6b6e;
+  --rule: #d3ddda;
+  --tide: #0e5e6f;
+  --fault: #b4236b;
+  --fault-wash: #b4236b1f;
+  --ochre-ink: #8a5a00;
+  --ochre: #e4b64a;
+  --calm: #afc0bb;
+  --void: #9aa8aa;
+  color-scheme: light;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
+/* DESIGN §3.1 — dark theme, overridable with data-theme */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  :root:not([data-theme="light"]) {
+    --fog: #162426;
+    --paper: #1d2f32;
+    --basalt: #e3ecea;
+    --shale: #9fb2b3;
+    --rule: #2f4649;
+    --tide: #5fb7c4;
+    --fault: #f06aa5;
+    --fault-wash: #f06aa524;
+    --ochre-ink: #e4b64a;
+    --ochre: #e4b64a;
+    --calm: #3f5b59;
+    --void: #51686a;
+    color-scheme: dark;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+:root[data-theme="dark"] {
+  --fog: #162426;
+  --paper: #1d2f32;
+  --basalt: #e3ecea;
+  --shale: #9fb2b3;
+  --rule: #2f4649;
+  --tide: #5fb7c4;
+  --fault: #f06aa5;
+  --fault-wash: #f06aa524;
+  --ochre-ink: #e4b64a;
+  --ochre: #e4b64a;
+  --calm: #3f5b59;
+  --void: #51686a;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-fog: var(--fog);
+  --color-paper: var(--paper);
+  --color-basalt: var(--basalt);
+  --color-shale: var(--shale);
+  --color-rule: var(--rule);
+  --color-tide: var(--tide);
+  --color-fault: var(--fault);
+  --color-fault-wash: var(--fault-wash);
+  --color-ochre-ink: var(--ochre-ink);
+  --color-ochre: var(--ochre);
+  --color-calm: var(--calm);
+  --color-void: var(--void);
+
+  /* DESIGN §3.2 — type */
+  --font-display: var(--font-familjen), ui-sans-serif, system-ui, sans-serif;
+  --font-text: var(--font-plex), ui-sans-serif, system-ui, sans-serif;
+
+  --text-xs: 12px;
+  --text-xs--line-height: 16px;
+  --text-sm: 13px;
+  --text-sm--line-height: 18px;
+  --text-md: 15px;
+  --text-md--line-height: 22px;
+  --text-lg: 19px;
+  --text-lg--line-height: 26px;
+  --text-xl: 23px;
+  --text-xl--line-height: 30px;
+  --text-2xl: 29px;
+  --text-2xl--line-height: 36px;
+  --text-3xl: 37px;
+  --text-3xl--line-height: 42px;
+
+  /* DESIGN §3.3 — radius by role */
+  --radius-field: 6px;
+  --radius-chip: 999px;
+  --radius-panel: 14px;
+}
+
+@layer base {
+  html {
+    background: var(--fog);
+  }
+
+  body {
+    background: var(--fog);
+    color: var(--basalt);
+    font-family: var(--font-text);
+    font-size: 15px;
+    line-height: 22px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* DESIGN §3.2 — display type tracking */
+  .font-display {
+    letter-spacing: -0.01em;
+  }
+
+  /* DESIGN §3.2 — all figures align */
+  table,
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* DESIGN §8 — visible 2px focus ring everywhere */
+  :focus-visible {
+    outline: 2px solid var(--tide);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: var(--fault-wash);
+  }
+}
+
+@layer utilities {
+  /*
+   * Visually hidden but still read aloud. The size is pinned with !important
+   * because a wide <table> would otherwise lay out at its full content width
+   * and push the page into a horizontal scroll.
+   */
+  .sr-only-table {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border-width: 0;
+  }
+
+  /*
+   * Wrapper for a visually hidden wide table. The table keeps its real
+   * <table> semantics for screen readers; this clipped 1px box keeps its
+   * intrinsic width from pushing the page into a horizontal scroll.
+   */
+  .sr-only-wrap {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+}
+
+/* DESIGN §6.10 — skeleton pulse, no shimmer */
+@keyframes faultline-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+.skeleton {
+  background: var(--rule);
+  animation: faultline-pulse 1.6s ease-in-out infinite;
+}
+
+/* DESIGN §6.3 — the one orchestrated moment */
+@keyframes faultline-draw {
+  from { clip-path: inset(0 100% 0 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+
+.ribbon-draw {
+  animation: faultline-draw 900ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+/* DESIGN §6.3 — logs panel pulse after a ribbon click */
+@keyframes faultline-attention {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  30% { box-shadow: 0 0 0 2px var(--tide); }
+}
+
+.attention-pulse {
+  animation: faultline-attention 700ms ease-out 1;
+}
+
+/* DESIGN §3.4 — reduced motion makes everything instant */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
