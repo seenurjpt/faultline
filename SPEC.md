@@ -1,6 +1,6 @@
 # Faultline — SLA Monitoring Dashboard
 
-**Engineering & Product Spec** · companion to `DESIGN.md` (visuals) and `BUILD_PROMPT.md` (build order)
+**Engineering & Product Spec** · companion to `DESIGN.md` (visuals)
 
 Faultline turns raw multi-agent health-check logs into numbers a billing team can trust: per-service monthly availability against a 99.9% SLA, the incidents behind any breach, and a full record of what was cleaned and why.
 
@@ -26,7 +26,7 @@ This document owns **behaviour, data, and workflow**. Anything about how things 
 | CI pipelines | Excluded by the assignment (local tests only) |
 | Credit amount calculation (tiers, currency) | The brief defines only the 99.9% threshold; we flag eligibility, not payout |
 | Real-time ingestion / streaming | Input is a file upload |
-| Editing or deleting stored data from the UI | Keeps the audit trail intact; noted as future work |
+| Editing stored checks from the UI | Keeps the audit trail intact. A whole dataset can be deleted (§11.4), but individual rows are never changed after upload |
 
 ---
 
@@ -52,7 +52,7 @@ This document owns **behaviour, data, and workflow**. Anything about how things 
 ```
  ┌──────────────────────────┐        PUT chunk (text/csv)       ┌─────────────────────────────┐
  │  Next.js app (Vercel)    │ ────────────────────────────────▶ │ Cloudflare Worker           │
- │  /upload  – upload UI    │ ◀──────── chunk report (JSON) ─── │ "processor"                 │
+ │  upload modal            │ ◀──────── chunk report (JSON) ─── │ "processor"                 │
  │  /        – dashboard    │                                   │ parse → validate → clean    │
  │  /api/*   – read API     │                                   │ → bulk upsert (1 txn/chunk) │
  └────────────┬─────────────┘                                   └──────────────┬──────────────┘
@@ -69,7 +69,7 @@ This document owns **behaviour, data, and workflow**. Anything about how things 
 | Upload UI + dashboard | Next.js (App Router, TypeScript) on Vercel Hobby | Strongest existing skill; server components let the dashboard render from the URL state |
 | Processor | Cloudflare Worker (TypeScript) on Workers Free | Real, deployed, stateless serverless function; no card needed. Free plan allows **10 ms CPU per request**, so uploads are chunked (see §5) |
 | Database | Neon Postgres, free tier | Relational fits billing data; unique constraints make re-processing idempotent; HTTP driver works from both Workers and Vercel; compute resumes automatically after idling |
-| Shared logic | `packages/core` (pure TypeScript, zero runtime deps) | The cleaning, merge, SLA and incident rules are written once, unit-tested once, and imported by both the Worker and the web app |
+| Shared logic | `core/` (pure TypeScript, zero runtime deps) | The cleaning, merge, SLA and incident rules are written once, unit-tested once, and imported by both the Worker and the web app |
 
 **Why the Worker does not read data back:** the brief says the function parses, validates and cleans. Keeping reads in Next.js keeps the Worker small, single-purpose and well under its CPU budget.
 
@@ -79,48 +79,61 @@ This document owns **behaviour, data, and workflow**. Anything about how things 
 
 ## 4. Repository layout
 
+A single npm package. The Next.js app lives at the repository root (which is
+also the Vercel root directory); the Worker and the shared rules are plain
+folders that the app and the Worker import by relative path.
+
 ```
 faultline/
-├── apps/
-│   ├── web/                    # Next.js app (Vercel root directory)
-│   │   ├── app/
-│   │   │   ├── page.tsx        # dashboard
-│   │   │   ├── upload/page.tsx # upload screen
-│   │   │   └── api/
-│   │   │       ├── datasets/route.ts
-│   │   │       ├── datasets/[id]/overview/route.ts
-│   │   │       └── datasets/[id]/logs/route.ts
-│   │   ├── components/         # see DESIGN.md for component inventory
-│   │   ├── lib/db.ts           # neon() client, server-only
-│   │   ├── lib/queries.ts      # all SQL for reads
-│   │   └── lib/upload-client.ts# chunker + bounded-concurrency sender
-│   └── processor/              # Cloudflare Worker
-│       ├── src/index.ts        # router
-│       ├── src/handlers/*.ts
-│       ├── src/db.ts           # bulk upsert statements
-│       └── wrangler.jsonc
-├── packages/
-│   └── core/
-│       ├── src/csv.ts          # RFC 4180 line parser + quote-aware splitter
-│       ├── src/clean.ts        # row → CleanCheck | Rejection
-│       ├── src/merge.ts        # duplicate merge rule
-│       ├── src/sla.ts          # health, slots, availability, error budget
-│       ├── src/incidents.ts    # incident detection
-│       ├── src/types.ts
-│       └── test/               # vitest, including golden tests on fixtures
-├── db/migrations/001_init.sql
+├── app/                        # Next.js App Router (Vercel root = repo root)
+│   ├── page.tsx                # dashboard, with the upload and manage-files modals
+│   ├── layout.tsx
+│   └── api/datasets/
+│       ├── route.ts            # GET  list of completed datasets
+│       └── [id]/
+│           ├── route.ts        # DELETE one dataset
+│           ├── overview/route.ts
+│           └── logs/route.ts
+├── components/
+│   ├── dashboard/              # top bar, ledger, ribbon, incidents, receipt, logs, manage-files modal
+│   ├── upload/                 # upload modal, tray states, useUpload hook
+│   └── ui/                     # primitives
+├── lib/
+│   ├── db.ts                   # neon() client, server-only
+│   ├── queries.ts              # all SQL for reads and the dataset delete
+│   ├── overview.ts             # builds the stats section from core + queries
+│   ├── upload-client.ts        # pre-flight, chunker, bounded-concurrency sender
+│   ├── delete-client.ts
+│   ├── url-state.ts            # nuqs parsers: every dashboard state lives in the URL
+│   └── …
+├── core/                       # shared rules, pure TypeScript, no I/O
+│   ├── src/csv.ts              # RFC 4180 line parser + quote-aware splitter
+│   ├── src/clean.ts            # row → CleanCheck | Rejection
+│   ├── src/merge.ts            # duplicate merge rule
+│   ├── src/pipeline.ts         # one chunk in, checks + rejections out
+│   ├── src/sla.ts              # health, slots, availability, error budget
+│   ├── src/incidents.ts        # incident detection
+│   ├── src/types.ts
+│   └── test/                   # vitest, including golden tests on fixtures
+├── worker/                     # Cloudflare Worker "faultline-processor"
+│   ├── src/index.ts            # router, CORS, rate limit
+│   ├── src/handlers/uploads.ts
+│   ├── src/db.ts               # bulk upsert statements
+│   └── wrangler.jsonc
+├── db/migrations/              # 001_init.sql, 002_read_indexes.sql
 ├── fixtures/                   # the 5 provided CSVs + dataset_incident_log.json
 ├── scripts/
 │   ├── migrate.ts              # applies db/migrations in order
-│   ├── verify-fixtures.ts      # runs core on fixtures, prints golden table
-│   └── smoke.ts                # uploads a fixture to the deployed Worker, checks results
+│   ├── verify-fixtures.ts      # runs core on fixtures, prints the §12 tables
+│   ├── smoke.ts                # uploads a fixture to the deployed Worker, checks results
+│   └── make-sample.ts          # generates a small CSV with the same data problems
 ├── README.md
 ├── SPEC.md
 ├── DESIGN.md
-└── pnpm-workspace.yaml
+└── DEPLOYMENT.md
 ```
 
-Package manager: **pnpm** workspaces. Node **22 LTS**. Use the current stable versions of Next.js, Wrangler, Tailwind CSS v4, `@neondatabase/serverless`, `zod` and `vitest` at scaffold time, and pin them in lockfiles.
+Package manager: **npm**. Node **22 LTS**. Versions are pinned in `package-lock.json`.
 
 ---
 
@@ -128,10 +141,10 @@ Package manager: **pnpm** workspaces. Node **22 LTS**. Use the current stable ve
 
 ### 5.1 Upload flow (happy path)
 
-1. **Pick file.** User drops or selects a `.csv` on `/upload`.
+1. **Pick file.** User opens the **Upload file** modal from the dashboard top bar (or the empty state) and drops or selects a `.csv`.
 2. **Pre-flight in the browser** (no network yet):
    - Reject if extension is not `.csv` or size > 10 MB.
-   - Read text, strip UTF-8 BOM, split into lines **outside quotes** (`packages/core/csv.ts`).
+   - Read text, strip UTF-8 BOM, split into lines **outside quotes** (`core/src/csv.ts`).
    - Parse the header; it must contain all required columns: `service_id, service_name, timestamp, status_code, latency, latency_unit, agent, region` (order may differ, extra columns are ignored).
    - Count data lines, compute `sha256` of the file bytes with `crypto.subtle`, compute `chunkCount = ceil(dataLines / 2000)`.
    - Show the pre-flight summary (file name, size, rows, chunks) and the **Process file** button.
@@ -142,7 +155,9 @@ Package manager: **pnpm** workspaces. Node **22 LTS**. Use the current stable ve
    - On `4xx`: stop and show the error; do not continue with later chunks.
    - Progress UI updates after each chunk with that chunk's report.
 5. **Complete.** `POST {PROCESSOR}/v1/uploads/{id}/complete`. Worker verifies every chunk index is present, computes totals and the data range, marks the upload `complete`, returns the summary.
-6. **Receipt.** UI shows the processing receipt (§6.4 fields) and an **Open dashboard** action that navigates to `/?dataset={id}`.
+6. **Receipt.** UI shows the processing receipt (§6.4 fields) and an **Open dashboard** action that closes the modal and navigates to `/?dataset={id}`.
+
+Closing the modal while batches are in flight asks for confirmation first ("Stop processing this file?"). Stopping leaves the upload in `processing`, which is resumable (§5.2).
 
 ### 5.2 Failure paths
 
@@ -156,10 +171,11 @@ Package manager: **pnpm** workspaces. Node **22 LTS**. Use the current stable ve
 
 ### 5.3 Dashboard flow
 
-1. `/` with no `dataset` param → redirect to the most recently completed dataset, or show the empty state with a link to `/upload`.
+1. `/` with no `dataset` param, or an unknown one → render the most recently completed dataset, or show the empty state with an **Upload a file** button that opens the upload modal.
 2. All dashboard state lives in the URL: `dataset`, `period`, `stats` (open/closed), `tz` (utc/ist), and the logs filters. A copied URL reproduces the exact view (useful for support tickets).
 3. Server renders the overview for the selected dataset and period; the logs table fetches client-side with keyset pagination.
 4. Clicking a day in the fault ribbon sets the logs filter to that UTC day and that service and scrolls to the logs section.
+5. **Manage files** in the top bar opens a dialog listing completed datasets with a per-file delete. Deleting asks for confirmation inline, then calls `DELETE /api/datasets/:id` (§11.4); if the deleted dataset was the one shown, the dashboard moves to the newest remaining one.
 
 ---
 
@@ -241,7 +257,7 @@ No auth (out of scope). Mitigations: origin allow-list, 10 MB file cap, 1 MB chu
 
 ---
 
-## 7. Cleaning pipeline (`packages/core`)
+## 7. Cleaning pipeline (`core/`)
 
 `clean(row, lineNumber) → { kind: 'check', check } | { kind: 'reject', reason }`
 
@@ -303,8 +319,8 @@ type CleanCheck = {
 Duplicate key: **(upload, service_id, checked_at, agent)** — evaluated *after* timestamp normalisation, which is what exposes the same check written as ISO in one row and epoch or `+05:30` in another.
 
 When two rows share a key, the surviving check is:
-- `statusCode`: if exactly one is a failure (not 2xx/3xx), keep the failure; if both are failures or both healthy but different, keep the first seen. Add `status_conflict_same_agent` when the codes differ.
-- `latencyMs`: first non-null value.
+- `statusCode`: if exactly one is a failure (not 2xx/3xx), keep the failure; if both are failures or both healthy but different, keep the one with the **lower source line**. "First seen" is defined by file position, not arrival order, so the result is the same whichever chunk lands first (§5.1 sends chunks in parallel). Add `status_conflict_same_agent` when the codes differ.
+- `latencyMs`: the lower-line copy's value if it has one, otherwise the other's (first non-null by file position).
 - `sourceLine`: the earliest line.
 - `flags`: union of both, plus `merged_duplicate`.
 
@@ -336,7 +352,7 @@ After cleaning, every file has a check for every 15-minute slot of every service
 
 ---
 
-## 8. Health and SLA model (`packages/core/sla.ts` + SQL)
+## 8. Health and SLA model (`core/src/sla.ts` + SQL)
 
 ### 8.1 Check health
 - **Up:** status 200–399
@@ -379,7 +395,7 @@ Context worth showing in the README: at 15-minute granularity a full 30-day mont
 
 ---
 
-## 9. Incident detection (`packages/core/incidents.ts`)
+## 9. Incident detection (`core/src/incidents.ts`)
 
 Input: ordered slot states for one service, per-slot median latency, service baseline latency.
 
@@ -405,7 +421,9 @@ Confirmed incidents appear in the incidents list and ribbon. Unconfirmed cluster
 
 ---
 
-## 10. Database schema (`db/migrations/001_init.sql`)
+## 10. Database schema (`db/migrations/`)
+
+`001_init.sql` is below. `002_read_indexes.sql` adds three indexes for the read API: a keyset index on `(upload_id, checked_at, service_id, agent)` matching the logs ordering, `(upload_id, agent)` for the agent filter, and a partial index on down checks for `outcome=failures`. `scripts/migrate.ts` applies the folder in order and records each file in `schema_migrations`.
 
 ```sql
 create extension if not exists pgcrypto;
@@ -497,19 +515,28 @@ on conflict (upload_id, service_id, checked_at, agent) do update set
   status_code = case
     when excluded.status_code not between 200 and 399
      and checks.status_code between 200 and 399 then excluded.status_code
+    when checks.status_code not between 200 and 399
+     and excluded.status_code between 200 and 399 then checks.status_code
+    when excluded.source_line < checks.source_line then excluded.status_code
     else checks.status_code end,
-  latency_ms  = coalesce(checks.latency_ms, excluded.latency_ms),
+  latency_ms = case
+    when excluded.source_line < checks.source_line
+      then coalesce(excluded.latency_ms, checks.latency_ms)
+    else coalesce(checks.latency_ms, excluded.latency_ms) end,
   source_line = least(checks.source_line, excluded.source_line),
   flags = (select array_agg(distinct x) from unnest(
              checks.flags || excluded.flags || array['merged_duplicate'] ||
              case when checks.status_code <> excluded.status_code
                   then array['status_conflict_same_agent'] else '{}'::text[] end) as x)
+where checks.source_line <> excluded.source_line
 returning (xmax = 0) as inserted;
 ```
 
-A **retry of the same chunk** must not add `merged_duplicate` to rows it originally inserted. Handle this by skipping the update when `excluded.source_line = checks.source_line` (add `where checks.source_line <> excluded.source_line` to the `do update`), and count those rows as neither stored nor merged; the `complete` step computes final totals from the table anyway.
+The tie-breaks compare `source_line` rather than trusting the row already in the table, so the merged result is the same whichever chunk lands first. That is what allows §5.1 to send chunks in parallel. Each batch is also sorted by the conflict key before the upsert, so two concurrent transactions take row locks in the same order and cannot deadlock.
 
-Wrap the service upsert, checks upsert, rejected-rows delete/insert and chunk upsert in `sql.transaction([...])`.
+The `where` clause makes a **retry of the same chunk** a no-op: a row matching itself is skipped, so it is neither re-counted as stored nor marked `merged_duplicate`. When nothing is returned, the Worker reports the counts recorded by the first attempt from `upload_chunks`. The `complete` step computes final totals from the tables anyway.
+
+The service upsert, checks upsert, rejected-rows delete/insert and chunk upsert run in one `sql.transaction([...])`; the chunk row's `stored` / `merged_across_chunks` are corrected afterwards from the `returning` result.
 
 ---
 
@@ -557,7 +584,7 @@ One call powers the whole stats section:
 - The `checks` upsert requires unique keys inside one statement; the in-chunk merge (§7.4) guarantees that.
 - `states`: one character per slot in the period — `u` up, `d` down, `.` unknown.
 - `latencyRatio`: slot median latency ÷ service baseline, 1 decimal, `null` when unknown.
-- Incidents are computed on the server by `packages/core/incidents.ts` from the ribbon data and baselines, always over the whole dataset, then filtered to those overlapping the period.
+- Incidents are computed on the server by `core/src/incidents.ts` from the ribbon data and baselines, always over the whole dataset, then filtered to those overlapping the period.
 
 ### 11.3 `GET /api/datasets/:id/logs`
 Query params:
@@ -591,11 +618,20 @@ For `outcome=rejected` rows are `{ lineNumber, reason, rawLine }` and the date f
 
 Ordering: `checked_at asc, service_id asc, agent asc`. Keyset pagination with `(checked_at, service_id, agent) > ($cursor)`.
 
+### 11.4 `DELETE /api/datasets/:id`
+Removes one completed upload. `checks`, `rejected_rows` and `upload_chunks` go with it through `on delete cascade`; `services` is shared across uploads and is left alone.
+
+- `200 { "id": "uuid", "filename": "…" }`
+- `404 not_found` when the id no longer exists, so a stale list is reported rather than a silent success
+- `422 invalid_dataset_id`, `503 not_configured` / `db_unavailable` as elsewhere
+
+The only write the web app performs. It is unauthenticated like everything else (auth is out of scope), which the UI's confirm step mitigates rather than prevents.
+
 ---
 
 ## 12. Golden values (acceptance tests)
 
-`packages/core/test/golden.test.ts` runs the full pipeline in memory on each fixture (chunk size 2,000) and must reproduce these exactly.
+`core/test/golden.test.ts` runs the full pipeline in memory on each fixture (chunk size 2,000) and must reproduce these exactly.
 
 ### 12.1 Cleaning totals
 
@@ -607,7 +643,7 @@ Ordering: `checked_at asc, service_id asc, agent asc`. Keyset pagination with `(
 | 21d_seed303 | 10904 | 163 | 76 | 2184 | 130 | 1 | 1 | 10885 | 18 | 10079 | 10080 |
 | 30d_seed404 | 15577 | 233 | 109 | 3131 | 186 | 1 | 1 | 15551 | 25 | 14399 | 14400 |
 
-(Blank-latency counts are raw rows before merging; one 14d blank sits on a duplicate whose twin has a value.)
+(Epoch, +05:30, seconds-unit and blank-latency counts are **raw file rows**, including duplicates and the rejected `999` row, which in the 14d and 21d files reports seconds. The receipt, the README table and `npm run verify` count flags on **stored** checks after merging, which is why they show 1,241 / 1,451 / 2,182 seconds rows for the 12d / 14d / 21d files. One 14d blank sits on a duplicate whose twin has a value.)
 
 ### 12.2 Availability, whole file (known slots / down slots / %)
 
@@ -658,7 +694,7 @@ Ordering: `checked_at asc, service_id asc, agent asc`. Keyset pagination with `(
 ## 13. Dashboard behaviour (visual rules in DESIGN.md)
 
 ### 13.1 Top bar
-Dataset switcher (completed uploads), period switcher (from `periods`), time zone toggle (UTC / IST — **display only**; filters and all calculations are UTC), link to `/upload`.
+Dataset switcher (completed uploads), period switcher (from `periods`), time zone toggle (UTC / IST — **display only**; filters and all calculations are UTC), **Manage files** (opens the delete dialog, §5.3) and **Upload file** (opens the upload modal, §5.1).
 
 ### 13.2 Findings section (collapsible)
 - Default open. Collapsed state persists in the URL (`stats=closed`).
@@ -697,11 +733,13 @@ Dataset switcher (completed uploads), period switcher (from `periods`), time zon
 | Vercel (public) | `NEXT_PUBLIC_PROCESSOR_URL` | `https://faultline-processor.<subdomain>.workers.dev` |
 
 ### 14.2 Steps
-1. **Neon:** create a project (closest Asia region offered), copy the connection string, run `pnpm db:migrate`.
-2. **Worker:** `pnpm --filter processor exec wrangler login`, `wrangler secret put DATABASE_URL`, set `ALLOWED_ORIGINS` in `wrangler.jsonc`, `wrangler deploy`. Check `GET /v1/health`.
-3. **Vercel:** import the repo, root directory `apps/web`, set env vars, deploy. Add the Vercel URL to `ALLOWED_ORIGINS` and redeploy the Worker.
-4. Upload all five fixtures through the live UI. Run `pnpm smoke`.
-5. Record Worker CPU time per chunk from Cloudflare metrics and the "last verified live" date in the README.
+The step-by-step runbook, including the order Cloudflare needs, is `DEPLOYMENT.md`. In short:
+
+1. **Neon:** create a project, copy the pooled connection string, run `DATABASE_URL=… npm run db:migrate`.
+2. **Worker:** `npx wrangler login`, `npm run worker:deploy`, then `npx wrangler secret put DATABASE_URL --config worker/wrangler.jsonc`. Check `GET /v1/health`.
+3. **Vercel:** import the repo with the root directory left as the repository root, set the two env vars, deploy. Add the Vercel URL to `ALLOWED_ORIGINS` in `worker/wrangler.jsonc` and redeploy the Worker.
+4. Upload the fixtures through the live UI. Run `PROCESSOR_URL=… WEB_URL=… npm run smoke`.
+5. Record the "last verified live" date in the README.
 
 ### 14.3 Free-tier notes for the README
 - Workers Free: 100,000 requests/day, 10 ms CPU per request. A 30-day file is 8 chunk requests + 2.
@@ -713,14 +751,14 @@ Dataset switcher (completed uploads), period switcher (from `periods`), time zon
 ## 15. README outline (write the prose yourself)
 
 1. **What it is** — two sentences.
-2. **Live URLs** — dashboard, upload page, Worker health URL. "Last verified live: <date>."
+2. **Live URLs** — dashboard (the upload modal is on it), Worker health URL. "Last verified live: <date>."
 3. **Architecture** — diagram from §3, table of what runs where and why, the CPU-limit measurement and the chunking decision.
 4. **Data findings** — table from §7.5 in your own words, with counts.
 5. **Assumptions** — health definition (§8.1), worst-agent rule, unknown slots excluded, monthly UTC billing, failures win on merge, off-grid rejected not snapped, `999` rejected, incident rule and its validation, stats chosen and why (on-call vs billing).
 6. **The strict-SLA observation** — three failed checks breach a month; every service breaches in every file; why incidents are shown separately.
 7. **Run locally / redeploy** — commands from §14.
 8. **Tests** — how to run; golden table.
-9. **With more time** — direct-to-storage uploads (R2) with an event-triggered Worker; Durable Object or queue to coordinate chunks; credit tier calculation; per-agent disagreement view; dataset deletion with audit log; Python port of `packages/core` to match EarthRe's backend stack; property-based tests on the cleaner.
+9. **With more time** — direct-to-storage uploads (R2) with an event-triggered Worker; Durable Object or queue to coordinate chunks; surfacing interrupted uploads in the Manage files dialog; credit tier calculation; per-agent disagreement view; Python port of `core/`; property-based tests on the cleaner.
 
 ---
 
@@ -729,10 +767,10 @@ Dataset switcher (completed uploads), period switcher (from `periods`), time zon
 | Phase | Time | Output |
 |---|---|---|
 | 0. Scaffold + deploy "hello" Worker, Neon, Vercel | 45 min | All three URLs live |
-| 1. `packages/core` cleaning, merge, tests | 90 min | Golden §12.1 passing |
+| 1. `core/` cleaning, merge, tests | 90 min | Golden §12.1 passing |
 | 2. SLA + incidents in core, tests | 60 min | Golden §12.2–12.4 passing |
 | 3. Worker endpoints + DB migration + upsert | 75 min | Fixture uploads via curl/script |
-| 4. Upload screen | 45 min | Live upload works end to end |
+| 4. Upload modal | 45 min | Live upload works end to end |
 | 5. Overview API + findings section | 75 min | Ledger, ribbon, incidents, receipt |
 | 6. Logs API + logs section | 60 min | Filters, pagination, rejected view |
 | 7. Polish, smoke test, README | 45 min | Submission ready |
@@ -753,3 +791,6 @@ Commit at the end of every task, with messages that say what changed and why.
 | D6 | Strict per-check billing availability + separate incident detection | Only count consecutive failures (hides flapping incidents) |
 | D7 | Incident = ≥3 failures, ≤2 healthy gap, latency ≥2× baseline | Validated against the incident log (§9) |
 | D8 | UTC for all calculations, IST display toggle | Local-time billing (ambiguous) |
+| D9 | Upload is a modal on the dashboard, not a separate page | A `/upload` route was built first and removed: uploading should not leave the dashboard, and one tray implementation now serves the top-bar button and the empty state |
+| D10 | Chunks sent 4 at a time; merge tie-breaks on `source_line` | Sequential sending (2.3× slower on the 30-day file); arrival-order tie-break (non-deterministic under parallelism) |
+| D11 | Whole-dataset delete from a separate Manage files dialog | Delete inside the dataset switcher (rejected: a Select item is a choice, so one click would both pick and delete); no delete at all (rejected: a mistaken upload was otherwise permanent) |

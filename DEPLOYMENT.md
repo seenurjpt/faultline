@@ -11,12 +11,13 @@ Total time: about 30 minutes.
 
 ```bash
 npm install
-npm test          # 78 tests, including the SPEC §12 golden values
+npm test          # 109 tests, including the 12 SPEC §12 golden tests
 npm run typecheck
+npm run worker:typecheck
 ```
 
-The golden tests read the five CSVs in `fixtures/`. If that directory is
-empty they skip rather than pass silently; see `fixtures/README.md`.
+The golden tests read the five CSVs committed in `fixtures/`. If you remove
+them the golden tests skip rather than pass silently; see `fixtures/README.md`.
 
 `npm run verify` prints the SPEC §12 tables from the code, including the
 incident-log comparison (8 of 8 logged incidents matched).
@@ -106,7 +107,7 @@ Vercel only, never in the repository.
    | `DATABASE_URL` | the Neon pooled connection string |
    | `NEXT_PUBLIC_PROCESSOR_URL` | your Worker URL, no trailing slash |
 
-   `NEXT_PUBLIC_` is deliberate: the upload page calls the Worker from the
+   `NEXT_PUBLIC_` is deliberate: the upload modal calls the Worker from the
    browser. `DATABASE_URL` has no such prefix and stays server-side.
 4. Deploy. Note the URL, e.g. `https://faultline.vercel.app`.
 
@@ -128,7 +129,7 @@ The Worker only accepts browser requests from origins you list.
    npm run worker:deploy
    ```
 
-Without this step the upload page fails with a CORS error in the browser
+Without this step the upload modal fails with a CORS error in the browser
 console, which is the allow-list doing its job.
 
 ---
@@ -171,7 +172,7 @@ The free plan allows 10 ms CPU per request. If p99 is near that, lower
 ## Local development
 
 ```bash
-cp .env.example .env.local     # fill in both values
+cp .env.example .env.local     # fill in both values (the example is committed)
 npm run dev                    # http://localhost:3000
 ```
 
