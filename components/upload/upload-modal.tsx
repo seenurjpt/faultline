@@ -78,11 +78,17 @@ export function UploadModal({
             // The centring transform lives in .modal-dialog's keyframes, not
             // in a Tailwind -translate-* class, so the two cannot fight.
             "modal-dialog fixed left-1/2 top-1/2 z-50 w-[min(760px,calc(100vw-32px))]",
-            "max-h-[calc(100dvh-32px)] overflow-y-auto",
-            "rounded-[var(--radius-panel)] border border-[var(--rule)] bg-[var(--fog)] p-6",
+            // A fixed height, not a max: the tray, pre-flight card, batch
+            // track and receipt are all different lengths, and letting the
+            // dialog resize between them made it jump under the cursor.
+            // On a short viewport it shrinks to fit rather than overflowing.
+            "h-[min(560px,calc(100dvh-32px))]",
+            "flex flex-col overflow-hidden",
+            "rounded-[var(--radius-panel)] border border-[var(--rule)] bg-[var(--fog)]",
           )}
         >
-          <div className="flex items-start justify-between gap-4">
+          {/* Header stays put; only the body between it and the footer moves. */}
+          <div className="flex shrink-0 items-start justify-between gap-4 p-6 pb-4">
             <div>
               <Dialog.Title className="font-display text-[23px] leading-[30px] font-semibold">
                 Process a monitoring file
@@ -103,18 +109,24 @@ export function UploadModal({
             </button>
           </div>
 
-          <div className="mt-5">
-            <UploadPanel
-              controller={controller}
-              onOpenDataset={openDataset}
-            />
+          {/* min-h-0 is what lets a flex child actually scroll rather than
+              growing to fit its content and pushing the footer out. */}
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
+            {/* Full height so the panel's min-h-full has something to resolve
+                against and the tray fills the box instead of floating. */}
+            <div className="h-full">
+              <UploadPanel controller={controller} onOpenDataset={openDataset} />
+            </div>
           </div>
 
+          {/* Pinned, so a long receipt cannot scroll the warning out of view. */}
           {confirmingClose && (
-            <ConfirmClose
-              onKeepGoing={() => setConfirmingClose(false)}
-              onStop={close}
-            />
+            <div className="shrink-0 border-t border-[var(--rule)] px-6 py-4">
+              <ConfirmClose
+                onKeepGoing={() => setConfirmingClose(false)}
+                onStop={close}
+              />
+            </div>
           )}
         </Dialog.Content>
       </Dialog.Portal>
@@ -138,11 +150,11 @@ function ConfirmClose({
     <div
       role="alertdialog"
       aria-label="Stop processing this file?"
-      className="mt-4 border-l-[3px] border-[var(--fault)] pl-4"
+      className="border-l-[3px] border-[var(--fault)] pl-4"
     >
       <p className="text-[15px] leading-[22px]">
-        Stop processing this file? Batches already sent are kept, and nothing
-        is added to the dashboard until the file finishes.
+        Stop processing this file? Batches already sent are kept, and nothing is
+        added to the dashboard until the file finishes.
       </p>
       <div className="mt-3 flex flex-wrap items-center gap-4">
         <Button kind="secondary" onClick={onKeepGoing} autoFocus>

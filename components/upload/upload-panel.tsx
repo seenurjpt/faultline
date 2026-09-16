@@ -26,6 +26,9 @@ export function UploadPanel({
     <div
       className={cx(
         "rounded-[var(--radius-panel)] border bg-[var(--paper)] p-6",
+        // The tray fills the dialog's fixed body rather than leaving dead
+        // space beneath it, which also makes the whole panel a drop target.
+        "flex min-h-full flex-col",
         dragging ? "border-[var(--tide)]" : "border-[var(--rule)]",
         stage.kind === "empty" && "border-dashed",
       )}
@@ -101,7 +104,7 @@ function EmptyTray({
   onChoose: (file: File) => void;
 }) {
   return (
-    <div className="flex flex-col items-start gap-4 py-8">
+    <div className="flex flex-1 flex-col items-start justify-center gap-4 py-8">
       <p className="text-[19px] leading-[26px]">Drop a .csv here</p>
       <div className="flex items-center gap-3">
         <span className="text-[15px] leading-[22px] text-[var(--shale)]">or</span>
