@@ -17,6 +17,8 @@ export type LogsFilters = {
   to: string | null;
   services: string[];
   outcome: Outcome;
+  /** Narrows `outcome=flagged` to one flag, for the receipt's drill-downs. */
+  flag: string | null;
   agent: string | null;
 };
 
@@ -53,6 +55,9 @@ function buildQuery(
     params.set("services", filters.services.join(","));
   }
   if (filters.outcome !== "all") params.set("outcome", filters.outcome);
+  if (filters.outcome === "flagged" && filters.flag) {
+    params.set("flag", filters.flag);
+  }
   if (filters.agent) params.set("agent", filters.agent);
   // The API rejects both together: a cursor steps, an offset jumps.
   if (at.cursor) params.set("cursor", at.cursor);
@@ -221,6 +226,9 @@ export function useLogs(filters: LogsFilters): LogsPagination {
         filters.to,
         [...filters.services].sort(),
         filters.outcome,
+        // Without this, two drill-downs to different flags would share a
+        // cached page and the second would show the first one's rows.
+        filters.flag,
         filters.agent,
       ]),
     [filters],

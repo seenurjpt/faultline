@@ -58,6 +58,8 @@ export type FilterState = {
   to: string | null;
   services: string[];
   outcome: Outcome;
+  /** Set by a receipt drill-down to narrow outcome=flagged to one flag. */
+  flag: string | null;
   agent: string | null;
 };
 
@@ -187,9 +189,14 @@ export function FilterBar({
 
       <Popover.Root>
         <Popover.Trigger className={FIELD}>
+          {/* One service names itself, which is more use than "1 service" —
+              and a ribbon click always selects exactly one. */}
           {state.services.length === 0
             ? "All services"
-            : `${state.services.length} services`}
+            : state.services.length === 1
+              ? (services.find((s) => s.serviceId === state.services[0])
+                  ?.serviceName ?? "1 service")
+              : `${state.services.length} services`}
           <CaretDown size={13} weight="bold" className="text-[var(--shale)]" />
         </Popover.Trigger>
         <Popover.Portal>
@@ -232,7 +239,9 @@ export function FilterBar({
       <PlainSelect
         label="Outcome"
         value={state.outcome}
-        onChange={(v) => onChange({ outcome: v as Outcome })}
+        // Choosing an outcome by hand clears any flag a receipt drill-down
+        // set, so "Checks with notes" means all of them again.
+        onChange={(v) => onChange({ outcome: v as Outcome, flag: null })}
         options={OUTCOMES.map((o) => ({ value: o.value, label: o.label }))}
         display={(v) =>
           `Outcome: ${OUTCOMES.find((o) => o.value === v)?.label ?? ""}`

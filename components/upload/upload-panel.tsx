@@ -320,7 +320,10 @@ function ReceiptCard({
           </li>
         )}
         {seconds > 0 && (
-          <li>Converted {formatNumber(seconds)} latency values from seconds</li>
+          <li>
+            Converted {formatNumber(seconds)}{" "}
+            {seconds === 1 ? "latency value" : "latency values"} from seconds
+          </li>
         )}
       </ul>
       <div className="mt-2 flex flex-wrap items-center gap-4">

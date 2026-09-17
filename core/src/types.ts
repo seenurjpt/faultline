@@ -29,18 +29,26 @@ export type RejectionReason =
   | "invalid_status_code";
 
 /** SPEC §7.2 and §7.4: flags recorded on a kept row. */
-export type CheckFlag =
-  | "ts_epoch_converted"
-  | "ts_offset_converted"
-  | "latency_unit_seconds"
-  | "latency_missing"
-  | "latency_unparseable"
-  | "latency_negative_dropped"
-  | "latency_unit_unknown"
-  | "region_missing"
-  | "service_name_conflict"
-  | "merged_duplicate"
-  | "status_conflict_same_agent";
+/**
+ * Every flag the cleaner or the merge can attach. Declared as a value so the
+ * read API can validate a `flag` query parameter against it: a new flag added
+ * here becomes filterable without a second list drifting out of sync.
+ */
+export const CHECK_FLAGS = [
+  "ts_epoch_converted",
+  "ts_offset_converted",
+  "latency_unit_seconds",
+  "latency_missing",
+  "latency_unparseable",
+  "latency_negative_dropped",
+  "latency_unit_unknown",
+  "region_missing",
+  "service_name_conflict",
+  "merged_duplicate",
+  "status_conflict_same_agent",
+] as const;
+
+export type CheckFlag = (typeof CHECK_FLAGS)[number];
 
 export type CleanCheck = {
   serviceId: string;

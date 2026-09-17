@@ -30,6 +30,12 @@ import {
 import { useLogs } from "@/lib/use-logs";
 import { formatDate, formatNumber, parseUtcDayKey } from "@/lib/format";
 
+/** A period's `to` is exclusive; the range filter's is inclusive. */
+function lastDayOf(exclusiveEndIso: string): string {
+  const d = new Date(new Date(exclusiveEndIso).getTime() - 86_400_000);
+  return d.toISOString().slice(0, 10);
+}
+
 export function DashboardView({
   datasets,
   overview,
@@ -61,6 +67,7 @@ export function DashboardView({
     to: filters.to,
     services: filters.services,
     outcome: filters.outcome,
+    flag: filters.flag,
     agent: filters.agent,
   });
 
@@ -140,12 +147,59 @@ export function DashboardView({
     to: filters.to,
     services: filters.services,
     outcome: filters.outcome,
+    flag: filters.flag,
     agent: filters.agent,
   };
 
+  // rangeEnd is exclusive, so the last covered day is the day before it. A
+  // file ending 31 Dec has a rangeEnd of 1 Jan, which would otherwise read as
+  // spanning two years and put a year on every log row.
   const datasetSpansYears =
     new Date(overview.dataset.rangeStart).getUTCFullYear() !==
-    new Date(overview.dataset.rangeEnd).getUTCFullYear();
+    new Date(
+      new Date(overview.dataset.rangeEnd).getTime() - 86_400_000,
+    ).getUTCFullYear();
+
+  /**
+   * The period scopes the findings above, not the check records below: the
+   * records are a separate investigation, and the ribbon and incidents both
+   * set a single day there. That is defensible but easy to misread as one
+   * view — a billing reader can see "April 2025" in the header and May rows
+   * in the table. Rather than silently re-scoping the logs (which would fight
+   * every click-through), the mismatch is stated where it shows, with one
+   * action to make the table match.
+   */
+  // Only raised when the records are genuinely unscoped. Someone who has
+  // picked a day or a range of their own is looking at what they asked for,
+  // and does not need telling the header says something else.
+  const logsHaveOwnDates =
+    (filters.mode === "day" && filters.date !== null) ||
+    (filters.mode === "range" && filters.from !== null);
+  const periodMatchesLogs = isWholeFile || isRejectedView || logsHaveOwnDates;
+
+  const scopeLogsToPeriod = useCallback(() => {
+    setFilters({
+      mode: "range",
+      date: null,
+      from: period.from.slice(0, 10),
+      // The period's `to` is exclusive; the range filter is inclusive.
+      to: lastDayOf(period.to),
+    });
+  }, [setFilters, period.from, period.to]);
+
+  const periodScopeNotice = periodMatchesLogs ? null : (
+    <p className="mt-2 text-[13px] leading-[18px] text-[var(--shale)]">
+      These records cover the whole file. The findings above are for{" "}
+      {period.label}.{" "}
+      <button
+        type="button"
+        onClick={scopeLogsToPeriod}
+        className="text-[var(--tide)] hover:underline underline-offset-4"
+      >
+        Show only {period.label}
+      </button>
+    </p>
+  );
 
   // DESIGN §7: the empty state names the filters that produced it.
   const emptyMessage = useMemo(() => {
@@ -318,8 +372,11 @@ export function DashboardView({
                 <div className="mt-3">
                   <DataReceipt
                     quality={quality}
-                    onFilter={(outcome: Outcome) => {
-                      setFilters({ outcome });
+                    onFilter={(outcome: Outcome, flag?: string | null) => {
+                      // A figure that counts one flag narrows to that flag;
+                      // anything else clears it, so a previous drill-down
+                      // never silently restricts the new view.
+                      setFilters({ outcome, flag: flag ?? null });
                       scrollToLogs();
                     }}
                   />
@@ -346,6 +403,8 @@ export function DashboardView({
                 : `${formatNumber(logsTotal)} ${logsTotal === 1 ? "record" : "records"}`
             }
           />
+
+          {periodScopeNotice}
 
           <Panel
             className={cx(

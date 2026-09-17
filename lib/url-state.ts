@@ -36,6 +36,9 @@ export const logsParsers = {
   to: parseAsString,
   services: parseAsArrayOf(parseAsString).withDefault([]),
   outcome: parseAsStringLiteral(OUTCOME_VALUES).withDefault("all"),
+  // Which flag a receipt drill-down narrowed to, so the view is shareable and
+  // survives a reload like every other filter.
+  flag: parseAsString,
   agent: parseAsString,
 };
 
@@ -50,6 +53,7 @@ export function clearedLogsFilters(): {
   to: null;
   services: string[];
   outcome: (typeof OUTCOME_VALUES)[number];
+  flag: null;
   agent: null;
 } {
   // A function, not a shared constant: the `services` array would otherwise be
@@ -60,6 +64,7 @@ export function clearedLogsFilters(): {
     to: null,
     services: [],
     outcome: "all",
+    flag: null,
     agent: null,
   };
 }

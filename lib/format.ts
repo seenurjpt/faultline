@@ -87,7 +87,12 @@ export function tzLabel(tz: Tz): string {
 /** Dataset range for the switcher: "6 Apr–5 May 2025". */
 export function formatRange(startIso: string, endIso: string): string {
   const s = new Date(startIso);
-  const e = new Date(endIso);
+  // `range_end` is stored exclusive — the Worker records
+  // date_trunc('day', max(checked_at)) + 1 day — so printing it raw named a
+  // day the file has no data for. The 9-day file read "8 May–17 May" while
+  // the date picker correctly stopped at the 16th. A day is subtracted to
+  // show the last day actually covered.
+  const e = new Date(new Date(endIso).getTime() - 86_400_000);
   const sameYear = s.getUTCFullYear() === e.getUTCFullYear();
   const left = sameYear ? formatDayMonth(s) : formatDate(s);
   return `${left}–${formatDate(e)}`;

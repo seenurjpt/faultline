@@ -19,6 +19,8 @@ type Segment = {
   color: string;
   /** Where this figure leads in the logs, if anywhere. */
   outcome: Outcome | null;
+  /** Narrows a flagged link to the rows this figure counted. */
+  flag?: string;
   help: string;
 };
 
@@ -39,6 +41,7 @@ function segments(quality: Quality): Segment[] {
       value: quality.merged,
       color: "var(--shale)",
       outcome: "flagged",
+      flag: "merged_duplicate",
       help: "Rows that reported a check another row had already reported. They were combined rather than counted twice, which would have double-counted failures.",
     },
     {
@@ -82,7 +85,8 @@ export function DataReceipt({
   onFilter,
 }: {
   quality: Quality;
-  onFilter: (outcome: Outcome) => void;
+  /** `flag` narrows outcome=flagged to one specific flag. */
+  onFilter: (outcome: Outcome, flag?: string | null) => void;
 }) {
   // The conversion list is long and rarely the reason someone opened the
   // dashboard, so it starts closed behind a count.
@@ -150,7 +154,7 @@ export function DataReceipt({
                   {s.outcome && s.value > 0 && (
                     <button
                       type="button"
-                      onClick={() => onFilter(s.outcome as Outcome)}
+                      onClick={() => onFilter(s.outcome as Outcome, s.flag)}
                       className="mt-[2px] block text-[13px] leading-[18px] text-[var(--tide)] hover:underline underline-offset-4"
                     >
                       {s.key === "rejected"
@@ -233,9 +237,11 @@ export function DataReceipt({
                             {open ? "Less" : "Why"}
                           </button>
                         )}
+                        {/* Passes the flag, so this lands on the rows this
+                            line counted rather than on every flagged row. */}
                         <button
                           type="button"
-                          onClick={() => onFilter("flagged")}
+                          onClick={() => onFilter("flagged", flag)}
                           className="text-[13px] leading-[18px] text-[var(--tide)] hover:underline underline-offset-4"
                         >
                           See these checks

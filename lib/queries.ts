@@ -123,11 +123,18 @@ export async function getQuality(uploadId: string): Promise<{
       from rejected_rows where upload_id = ${uploadId}::uuid
       group by reason
     `,
+    // Counted from the stored rows, not by summing upload_chunks.issue_counts.
+    // Those are recorded per batch before the database merges across batches,
+    // so merged_duplicate was undercounted: a chunk only knows about the
+    // duplicates that landed inside it, and the rest are merged by the
+    // ON CONFLICT upsert afterwards. The 9-day file reported 2 that way while
+    // the table holds 7. Counting here also guarantees the figure and the
+    // rows its "See these checks" link opens are the same set.
     db()`
-      select key, sum(value::int)::int as n
-      from upload_chunks, jsonb_each_text(issue_counts)
-      where upload_id = ${uploadId}::uuid
-      group by key
+      select flag as key, count(*)::int as n
+      from checks c, unnest(c.flags) as flag
+      where c.upload_id = ${uploadId}::uuid
+      group by flag
     `,
   ]);
 
@@ -152,6 +159,12 @@ export type LogsQuery = {
   to: Date | null;
   services: string[];
   outcome: "all" | "failures" | "slow" | "flagged";
+  /**
+   * Narrows `outcome=flagged` to one flag, so a receipt figure links to the
+   * rows it actually counted rather than to every flagged row. Validated
+   * against CHECK_FLAGS in the route before it reaches here.
+   */
+  flag?: string | null;
   agent: string | null;
   cursor: { checkedAt: string; serviceId: string; agent: string } | null;
   /**
@@ -203,7 +216,10 @@ export async function getLogs(
   if (q.outcome === "failures") {
     where.push("c.status_code not between 200 and 399");
   } else if (q.outcome === "flagged") {
-    where.push("array_length(c.flags, 1) > 0");
+    // A specific flag narrows to the rows that carry it; without one this
+    // stays "has any flag". The value still travels as a parameter.
+    if (q.flag) where.push(`${add(q.flag)} = any(c.flags)`);
+    else where.push("array_length(c.flags, 1) > 0");
   } else if (q.outcome === "slow") {
     // Per-service thresholds arrive as a small (service_id, threshold) list.
     // With no thresholds nothing can be slow, so short-circuit to no rows.

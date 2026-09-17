@@ -3,6 +3,7 @@ import { z } from "zod";
 import { isDbConfigured } from "@/lib/db";
 import { slowThresholds } from "@/lib/overview";
 import { getDataset, getLogs, getRejectedRows } from "@/lib/queries";
+import { CHECK_FLAGS } from "@/core/src/types";
 
 // SPEC §11.3
 export const runtime = "nodejs";
@@ -19,6 +20,11 @@ const paramsSchema = z
     outcome: z
       .enum(["all", "failures", "slow", "flagged", "rejected"])
       .default("all"),
+    // Narrows `outcome=flagged` to one specific flag, which is what makes the
+    // receipt's figures drill down to the rows they count rather than to
+    // every flagged row. Constrained to the known flags so it cannot reach
+    // the query as arbitrary text.
+    flag: z.enum(CHECK_FLAGS).optional(),
     agent: z.string().max(100).optional(),
     cursor: z.string().max(500).optional(),
     // Only for jumping to a page number; stepping uses the cursor.
@@ -180,6 +186,7 @@ export async function GET(
       to,
       services: q.services ? q.services.split(",").filter(Boolean).slice(0, 50) : [],
       outcome: q.outcome,
+      flag: q.flag ?? null,
       agent: q.agent ?? null,
       cursor,
       offset: q.offset ?? 0,
